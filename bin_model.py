@@ -30,7 +30,7 @@ class ModelConstants:
     """
     Define relevant constants and scalings for the model.
 
-    Parameters:
+    Initialization arguments:
     rho_water - Density of water (kg/m^3).
     rho_air - Density of air (kg/m^3).
     std_diameter - Diameter (m) of a particle of "typical" size, used
@@ -305,9 +305,8 @@ class LongKernel(Kernel):
             kr_si = kr_cgs * 1.e-3
         self.kr = kr_si * constants.rho_air * constants.std_mass
         if rain_m is None:
-            self.log_rain_m = np.log(constants.rain_m)
-        else:
-            self.log_rain_m = np.log(rain_m)
+            rain_m = constants.diameter_to_scaled_mass(1.e-4)
+        self.log_rain_m = np.log(rain_m)
 
     def _integral_cloud(self, a, b, lxm, lxp, btype):
         """Computes integral part of the kernel for cloud-sized particles.
@@ -482,7 +481,66 @@ class LongKernel(Kernel):
             return start + cloud_part + rain_part
 
 
-class Grid:
+class MassGrid:
     """
-    Bin model grid.
+    Represent the bin model's mass grid.
+
+    Attributes:
+    d_min, d_max - Minimum/maximum particle diameter (m).
+    x_min, x_max - Minimum/maximum particle size (scaled mass units).
+    lx_min, lx_max - Natural ogarithm of x_min/x_max, for convenience.
+    num_bins - Number of model bins.
+    bin_bounds - Array of size num_bins+1 containing edges of bins.
+                 This array is in units of log(scaled mass), i.e. the
+                 first value is lx_min and last value is lx_max.
+    bin_bounds_d - Same as bin_bounds, but for diameters of particles at the
+                   bin edges (m).
+    bin_widths - Array of size num_bins containing widths of each bin
+                 in log-units, i.e. `sum(bin_widths) == lx_max-lx_min`.
+
+    Methods:
+    find_bin
     """
+    def find_bin(self, lx):
+        """Returns the index of the bin containing the given mass value.
+
+        Arguments:
+        lx - Natural logarithm of the mass to search for.
+
+        Returns an integer i such that
+            bin_bounds[i] <= lx < bin_bounds[i+1]
+        If `lx < lx_min`, the value returned is -1. If `lx >= lx_max`, the
+        value returned is `num_bins`.
+        """
+        for i in range(self.num_bins+1):
+            if self.bin_bounds[i] >= lx:
+                return i-1
+        return self.num_bins
+
+
+class GeometricMassGrid(MassGrid):
+    """
+    Represent a mass grid with even geometric spacing.
+
+    Initialization arguments:
+    constants - ModelConstants object.
+    d_min, d_max - Minimum/maximum particle diameter (m).
+    num_bins - Number of model bins
+
+    Attributes:
+    dlx - Constant width of each bin.
+    """
+
+    def __init__(self, constants, d_min, d_max, num_bins):
+        self.d_min = d_min
+        self.d_max = d_max
+        self.num_bins = num_bins
+        self.x_min = constants.diameter_to_scaled_mass(d_min)
+        self.x_max = constants.diameter_to_scaled_mass(d_max)
+        self.lx_min = np.log(self.x_min)
+        self.lx_max = np.log(self.x_max)
+        self.dlx = (self.lx_max - self.lx_min) / self.num_bins
+        self.bin_bounds = np.linspace(self.lx_min, self.lx_max, num_bins+1)
+        bin_bounds_m = np.exp(self.bin_bounds)
+        self.bin_bounds_d = constants.scaled_mass_to_diameter(bin_bounds_m)
+        self.bin_widths = self.bin_bounds[1:] - self.bin_bounds[:-1]

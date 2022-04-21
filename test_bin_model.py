@@ -562,10 +562,12 @@ class TestLongKernel(unittest.TestCase):
         self.assertAlmostEqual(kernel.log_rain_m, np.log(0.8))
 
     def test_log_rain_m_default(self):
-        kernel = LongKernel(self.constants)
-        # Note that the 0 here is not hard-coded in the Long kernel, but
-        # rather derives from using `np.log(self.constants.rain_m)`, which
-        # happens to be 1 when `std_diameter == rain_d`.
+        constants = ModelConstants(rho_water=1000.,
+                                   rho_air=1.2,
+                                   std_diameter=1.e-4,
+                                   rain_d=8.e-5)
+        kernel = LongKernel(constants)
+        # Original Long kernel value.
         self.assertAlmostEqual(kernel.log_rain_m, 0.)
 
     def test_integral_cloud_btype_bounds(self):
@@ -891,3 +893,89 @@ class TestLongKernel(unittest.TestCase):
         actual = kernel.integrate_over_bins(lx1, lx2, ly1, ly2, lz1, lz2)
         expected = 3.773318473671634e-09
         self.assertAlmostEqual(actual, expected, places=20)
+
+
+class TestMassGrid(unittest.TestCase):
+    """
+    Tests of MassGrid methods and attributes.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+        # This will put lx bin boundaries at 10^-6, 10^-5, ..., 10^3.
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=9)
+
+    def test_find_bin(self):
+        for i in range(9):
+            lx = np.log(10.**(-5.5+i))
+            self.assertEqual(self.grid.find_bin(lx), i)
+
+    def test_find_bin_lower_edge(self):
+        lx = np.log(10.**-6.5)
+        self.assertEqual(self.grid.find_bin(lx), -1)
+        lx = np.log(10.**-10)
+        self.assertEqual(self.grid.find_bin(lx), -1)
+
+    def test_find_bin_upper_edge(self):
+        lx = np.log(10.**3.5)
+        self.assertEqual(self.grid.find_bin(lx), 9)
+        lx = np.log(10.**10)
+        self.assertEqual(self.grid.find_bin(lx), 9)
+
+
+class TestGeometricMassGrid(unittest.TestCase):
+    """
+    Tests of GeometricMassGrid methods and attributes.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+        self.d_min = 1.e-6
+        self.d_max = 1.e-3
+        self.num_bins = 90
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=self.d_min,
+                                      d_max=self.d_max,
+                                      num_bins=self.num_bins)
+
+    def test_geometric_grid_init_scalars(self):
+        const = self.constants
+        grid = self.grid
+        self.assertEqual(grid.d_min, self.d_min)
+        self.assertEqual(grid.d_max, self.d_max)
+        self.assertEqual(grid.num_bins, self.num_bins)
+        x_min = const.diameter_to_scaled_mass(self.d_min)
+        self.assertAlmostEqual(grid.x_min, x_min)
+        x_max = const.diameter_to_scaled_mass(self.d_max)
+        self.assertAlmostEqual(grid.x_max, x_max)
+        lx_min = np.log(x_min)
+        self.assertAlmostEqual(grid.lx_min, lx_min)
+        lx_max = np.log(x_max)
+        self.assertAlmostEqual(grid.lx_max, lx_max)
+        dlx = (lx_max - lx_min) / self.num_bins
+        self.assertAlmostEqual(grid.dlx, dlx)
+
+    def test_geometric_grid_init_arrays(self):
+        const = self.constants
+        grid = self.grid
+        bin_bounds = np.linspace(grid.lx_min, grid.lx_max, self.num_bins+1)
+        self.assertEqual(len(grid.bin_bounds), self.num_bins+1)
+        for i in range(self.num_bins+1):
+            self.assertAlmostEqual(grid.bin_bounds[i], bin_bounds[i])
+        bin_bounds_d = np.array([const.scaled_mass_to_diameter(np.exp(b))
+                                 for b in grid.bin_bounds])
+        self.assertEqual(len(grid.bin_bounds_d), self.num_bins+1)
+        for i in range(self.num_bins+1):
+            self.assertAlmostEqual(grid.bin_bounds_d[i], bin_bounds_d[i])
+        bin_widths = bin_bounds[1:] - bin_bounds[:-1]
+        self.assertEqual(len(grid.bin_widths), self.num_bins)
+        for i in range(self.num_bins):
+            self.assertAlmostEqual(grid.bin_widths[i], bin_widths[i])
