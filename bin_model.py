@@ -500,9 +500,10 @@ class MassGrid:
 
     Methods:
     find_bin
+    get_sum_bins
     """
     def find_bin(self, lx):
-        """Returns the index of the bin containing the given mass value.
+        """Find the index of the bin containing the given mass value.
 
         Arguments:
         lx - Natural logarithm of the mass to search for.
@@ -516,6 +517,93 @@ class MassGrid:
             if self.bin_bounds[i] >= lx:
                 return i-1
         return self.num_bins
+
+    def find_sum_bins(self, lx1, lx2, ly1, ly2):
+        """Find the range of bins gaining mass from two colliding bins.
+
+        Arguments:
+        lx1, lx2 - Lower/upper bound for x bin.
+        ly1, ly2 - Lower/upper bound for y bin.
+
+        Returns a tuple `(idx, num)`, where idx is the smallest bin that will
+        gain mass from collisions between particles in the two bins, and num is
+        the number of bins that will gain mass.
+
+        Note that although `idx + num - 1` is typically the index of the
+        largest output bin, it can be equal to `num_bins` if some of the mass
+        lies outside of the range.
+        """
+        tol = 1.e-10 # Tolerance for considering bin ranges non-overlapping.
+        low_sum_log = add_logs(lx1, ly1)
+        idx = self.find_bin(low_sum_log)
+        if idx < self.num_bins and self.bin_bounds[idx+1] - low_sum_log <= tol:
+            idx += 1
+        high_sum_log = add_logs(lx2, ly2)
+        high_idx = self.find_bin(high_sum_log)
+        if high_idx >= 0 and high_sum_log - self.bin_bounds[high_idx] <= tol:
+            high_idx -= 1
+        num = high_idx - idx + 1
+        return idx, num
+
+    def construct_sparsity_structure(self, boundary=None):
+        """Find the sparsity structure of a kernel tensor using this grid.
+
+        Arguments:
+        boundary (optional) - Either 'open' or 'closed'. Default is 'open'.
+
+        We represent the kernel as a tensor indexed by three bins:
+
+         1. The bin acting as a source of mass (labeled the "x" bin).
+         2. A bin colliding with the source bin (the "y" bin).
+         3. The destination bin that mass is added to (the "z" bin).
+
+        For a given x and y bin, not every particle size can be produced; only
+        a small range of z bins will have nonzero kernel tensor. To represent
+        these ranges, the function returns a tuple `(idxs, nums, max_num)`:
+        
+         - idxs is an array of shape `(num_bins, num_bins)` that contains the
+           indices of the smallest z bins for which the tensor is non-zero for
+           each index of x and y bins.
+         - nums is also of shape `(num_bins, num_bins)`, and contains the
+           number of z bins that have nonzero tensor elements for each x and y.
+         - max_num is simply the value of the maximum entry in nums, and is
+           returned only for convenience.
+
+        The outputs treat particles that are larger than the largest bin as
+        belonging to an extra bin that stretches to infinity; therefore, the
+        maximum possible values of both idxs and idxs + nums - 1 are num_bins,
+        not num_bins - 1.
+
+        If `boundary == 'closed'`, this behavior is modified so that there is
+        no bin stretching to infinity, the excessive mass is placed in the
+        largest finite bin, and the maximum values of idxs and idxs + nums - 1
+        are actually num_bins - 1.
+
+        For geometrically-spaced mass grids, note that the entries of nums are
+        all 1 or 2, so max_num is 2.
+        """
+        if boundary is None:
+            boundary = 'open'
+        assert boundary in ('open', 'closed'), \
+            "invalid boundary specified: " + str(boundary)
+        nb = self.num_bins
+        bb = self.bin_bounds
+        idxs = np.zeros((nb, nb), dtype=np.int_)
+        nums = np.zeros((nb, nb), dtype=np.int_)
+        for i in range(nb):
+            for j in range(nb):
+                idxs[i,j], nums[i,j] = self.find_sum_bins(
+                    bb[i], bb[i+1], bb[j], bb[j+1]
+                )
+        if boundary == 'closed':
+            for i in range(nb):
+                for j in range(nb):
+                    if idxs[i,j] == nb:
+                        idxs[i,j] = nb - 1
+                    elif idxs[i,j] + nums[i,j] - 1 == nb:
+                        nums[i,j] -= 1
+        max_num = nums.max()
+        return idxs, nums, max_num
 
 
 class GeometricMassGrid(MassGrid):
@@ -544,3 +632,60 @@ class GeometricMassGrid(MassGrid):
         bin_bounds_m = np.exp(self.bin_bounds)
         self.bin_bounds_d = constants.scaled_mass_to_diameter(bin_bounds_m)
         self.bin_widths = self.bin_bounds[1:] - self.bin_bounds[:-1]
+
+
+class KernelTensor():
+    """
+    Represent a collision kernel evaluated on a particular mass grid.
+
+    Initialization arguments:
+    kernel - A Kernel object representing the collision kernel.
+    grid - A MassGrid object defining the bins.
+    scaling (optional) - If present, the kernel is divided by this scaling
+                         factor.
+    boundary (optional) - Upper boundary condition. If 'open', then particles
+                          that are created larger than the largest bin size
+                          "fall out" of the box. If 'closed', these particles
+                          are placed in the largest bin. Defaults to 'open'.
+
+    Attributes:
+    grid - Stored reference to corresponding grid.
+    scaling - Effect of the kernel has been scaled down by this amount.
+    boundary - Upper boundary condition for this kernel.
+    idxs, nums, max_num - Outputs of `MassGrid.construct_sparsity_structure`.
+    data - Data corresponding to nonzero elements of the tensor kernel.
+           This is represented by an array of shape:
+               (num_bins, num_bins, max_num)
+    """
+    def __init__(self, kernel, grid, scaling=None, boundary=None):
+        self.grid = grid
+        if scaling is None:
+            scaling = 1.
+        self.scaling = scaling
+        if boundary is None:
+            boundary = 'open'
+        self.boundary = boundary
+        idxs, nums, max_num = \
+            grid.construct_sparsity_structure(boundary=boundary)
+        self.idxs = idxs
+        self.nums = nums
+        self.max_num = max_num
+        nb = grid.num_bins
+        bb = grid.bin_bounds
+        self.data = np.zeros((nb, nb, max_num))
+        if boundary == 'closed':
+            high_bin = nb - 1
+        else:
+            high_bin = nb
+        for i in range(nb):
+            for j in range(nb):
+                idx = idxs[i,j]
+                for k in range(nums[i,j]):
+                    zidx = idx + k
+                    if zidx == high_bin:
+                        top_bound = np.inf
+                    else:
+                        top_bound = bb[zidx+1]
+                    self.data[i,j,k] = kernel.integrate_over_bins(
+                        bb[i], bb[i+1], bb[j], bb[j+1], bb[zidx], top_bound)
+        self.data /= scaling

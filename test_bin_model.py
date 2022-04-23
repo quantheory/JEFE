@@ -909,6 +909,16 @@ class TestMassGrid(unittest.TestCase):
                                       d_min=1.e-6,
                                       d_max=1.e-3,
                                       num_bins=9)
+        # Mass-doubling grid.
+        self.md_grid = GeometricMassGrid(self.constants,
+                                         d_min=1.e-6,
+                                         d_max=2.e-6,
+                                         num_bins=3)
+        # Fine grid.
+        self.fine_grid = GeometricMassGrid(self.constants,
+                                           d_min=1.e-6,
+                                           d_max=2.e-6,
+                                           num_bins=6)
 
     def test_find_bin(self):
         for i in range(9):
@@ -926,6 +936,114 @@ class TestMassGrid(unittest.TestCase):
         self.assertEqual(self.grid.find_bin(lx), 9)
         lx = np.log(10.**10)
         self.assertEqual(self.grid.find_bin(lx), 9)
+
+    def test_find_sum_bins(self):
+        # Note that this may not be sufficient to capture non-geometric cases,
+        # since geometrically-spaced grids should always have num_sum_bins
+        # equal to 2 (or maybe 1).
+        grid = self.grid
+        lx1 = grid.bin_bounds[0]
+        lx2 = grid.bin_bounds[1]
+        ly1 = grid.bin_bounds[0]
+        ly2 = grid.bin_bounds[1]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 0)
+        self.assertEqual(num, 2)
+        ly1 = grid.bin_bounds[1]
+        ly2 = grid.bin_bounds[2]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 1)
+        self.assertEqual(num, 2)
+        # Different results for grid with spacing dividing log(2) evenly.
+        grid = self.md_grid
+        lx1 = grid.bin_bounds[0]
+        lx2 = grid.bin_bounds[1]
+        ly1 = grid.bin_bounds[0]
+        ly2 = grid.bin_bounds[1]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 1)
+        self.assertEqual(num, 1)
+        ly1 = grid.bin_bounds[1]
+        ly2 = grid.bin_bounds[2]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 1)
+        self.assertEqual(num, 2)
+
+    def test_find_sum_bins_upper_range(self):
+        grid = self.md_grid
+        lx1 = grid.bin_bounds[2]
+        lx2 = grid.bin_bounds[3]
+        ly1 = grid.bin_bounds[2]
+        ly2 = grid.bin_bounds[3]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 3)
+        self.assertEqual(num, 1)
+        lx1 = grid.bin_bounds[1]
+        lx2 = grid.bin_bounds[2]
+        ly1 = grid.bin_bounds[2]
+        ly2 = grid.bin_bounds[3]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 2)
+        self.assertEqual(num, 2)
+
+    def test_find_sum_bins_fine(self):
+        grid = self.fine_grid
+        lx1 = grid.bin_bounds[5]
+        lx2 = grid.bin_bounds[6]
+        ly1 = grid.bin_bounds[5]
+        ly2 = grid.bin_bounds[6]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 6)
+        self.assertEqual(num, 1)
+
+    def test_construct_sparsity_pattern(self):
+        grid = self.md_grid
+        idxs, nums, max_num = grid.construct_sparsity_structure()
+        expected_idxs = np.array([
+            [1, 1, 2],
+            [1, 2, 2],
+            [2, 2, 3],
+        ])
+        expected_nums = np.array([
+            [1, 2, 2],
+            [2, 1, 2],
+            [2, 2, 1],
+        ])
+        expected_max_num = 2
+        self.assertEqual(idxs.shape, expected_idxs.shape)
+        for i in range(len(idxs.flat)):
+            self.assertEqual(idxs.flat[i], expected_idxs.flat[i])
+        self.assertEqual(nums.shape, expected_nums.shape)
+        for i in range(len(nums.flat)):
+            self.assertEqual(nums.flat[i], expected_nums.flat[i])
+        self.assertEqual(max_num, expected_max_num)
+
+    def test_construct_sparsity_pattern_closed_boundary(self):
+        grid = self.md_grid
+        idxs, nums, max_num = \
+            grid.construct_sparsity_structure(boundary='closed')
+        expected_idxs = np.array([
+            [1, 1, 2],
+            [1, 2, 2],
+            [2, 2, 2],
+        ])
+        expected_nums = np.array([
+            [1, 2, 1],
+            [2, 1, 1],
+            [1, 1, 1],
+        ])
+        expected_max_num = 2
+        self.assertEqual(idxs.shape, expected_idxs.shape)
+        for i in range(len(idxs.flat)):
+            self.assertEqual(idxs.flat[i], expected_idxs.flat[i])
+        self.assertEqual(nums.shape, expected_nums.shape)
+        for i in range(len(nums.flat)):
+            self.assertEqual(nums.flat[i], expected_nums.flat[i])
+        self.assertEqual(max_num, expected_max_num)
+
+    def test_construct_sparsity_pattern_invalid_boundary_raises(self):
+        with self.assertRaises(AssertionError):
+            self.grid.construct_sparsity_structure(boundary='nonsense')
 
 
 class TestGeometricMassGrid(unittest.TestCase):
@@ -979,3 +1097,133 @@ class TestGeometricMassGrid(unittest.TestCase):
         self.assertEqual(len(grid.bin_widths), self.num_bins)
         for i in range(self.num_bins):
             self.assertAlmostEqual(grid.bin_widths[i], bin_widths[i])
+
+
+class TestKernelTensor(unittest.TestCase):
+    """
+    Tests of KernelTensor methods and attributes.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+        self.kernel = LongKernel(self.constants)
+        self.num_bins = 6
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=2.e-6,
+                                      num_bins=self.num_bins)
+
+    def test_kernel_init(self):
+        nb = self.num_bins
+        bb = self.grid.bin_bounds
+        ktens = KernelTensor(self.kernel, self.grid)
+        self.assertEqual(ktens.scaling, 1.)
+        self.assertEqual(ktens.boundary, 'open')
+        idxs, nums, max_num = self.grid.construct_sparsity_structure()
+        self.assertEqual(ktens.idxs.shape, idxs.shape)
+        for i in range(len(idxs.flat)):
+            self.assertEqual(ktens.idxs.flat[i], idxs.flat[i])
+        self.assertEqual(ktens.nums.shape, nums.shape)
+        for i in range(len(nums.flat)):
+            self.assertEqual(ktens.nums.flat[i], nums.flat[i])
+        self.assertEqual(ktens.max_num, max_num)
+        self.assertEqual(ktens.data.shape, (nb, nb, max_num))
+        lx1 = bb[0]
+        lx2 = bb[1]
+        ly1 = bb[0]
+        ly2 = bb[1]
+        lz1 = bb[2]
+        lz2 = bb[3]
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[0,0,0], expected)
+        lx1 = bb[0]
+        lx2 = bb[1]
+        ly1 = bb[1]
+        ly2 = bb[2]
+        lz1 = bb[3]
+        lz2 = bb[4]
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[0,1,1], expected)
+        expected = self.kernel.integrate_over_bins(ly1, ly2, lx1, lx2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[1,0,1], expected)
+        lx1 = bb[5]
+        lx2 = bb[6]
+        ly1 = bb[5]
+        ly2 = bb[6]
+        lz1 = bb[6]
+        lz2 = np.inf
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[5,5,0], expected)
+        lx1 = bb[0]
+        lx2 = bb[1]
+        ly1 = bb[5]
+        ly2 = bb[6]
+        lz1 = bb[5]
+        lz2 = bb[6]
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[0,5,0], expected)
+        lx1 = bb[0]
+        lx2 = bb[1]
+        ly1 = bb[5]
+        ly2 = bb[6]
+        lz1 = bb[6]
+        lz2 = np.inf
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[0,5,1], expected)
+
+    def test_kernel_init_scaling(self):
+        ktens = KernelTensor(self.kernel, self.grid, scaling=2.)
+        self.assertEqual(ktens.scaling, 2.)
+        ktens_noscale = KernelTensor(self.kernel, self.grid)
+        self.assertEqual(ktens.data.shape, ktens_noscale.data.shape)
+        for i in range(len(ktens.data.flat)):
+            self.assertAlmostEqual(ktens.data.flat[i],
+                                   ktens_noscale.data.flat[i]/2.,
+                                   places=25)
+
+    def test_kernel_init_invalid_boundary_raises(self):
+        with self.assertRaises(AssertionError):
+            ktens = KernelTensor(self.kernel, self.grid, boundary='nonsense')
+
+    def test_kernel_init_boundary(self):
+        nb = self.num_bins
+        bb = self.grid.bin_bounds
+        ktens = KernelTensor(self.kernel, self.grid, boundary='closed')
+        self.assertEqual(ktens.boundary, 'closed')
+        idxs, nums, max_num = \
+            self.grid.construct_sparsity_structure(boundary='closed')
+        self.assertEqual(ktens.idxs.shape, idxs.shape)
+        for i in range(len(idxs.flat)):
+            self.assertEqual(ktens.idxs.flat[i], idxs.flat[i])
+        self.assertEqual(ktens.nums.shape, nums.shape)
+        for i in range(len(nums.flat)):
+            self.assertEqual(ktens.nums.flat[i], nums.flat[i])
+        self.assertEqual(ktens.max_num, max_num)
+        self.assertEqual(ktens.data.shape, (nb, nb, max_num))
+        lx1 = bb[5]
+        lx2 = bb[6]
+        ly1 = bb[5]
+        ly2 = bb[6]
+        lz1 = bb[5]
+        lz2 = np.inf
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[5,5,0], expected)
+        lx1 = bb[0]
+        lx2 = bb[1]
+        ly1 = bb[5]
+        ly2 = bb[6]
+        lz1 = bb[5]
+        lz2 = np.inf
+        expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
+                                                   lz1, lz2)
+        self.assertEqual(ktens.data[0,5,0], expected)
