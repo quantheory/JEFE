@@ -1,6 +1,6 @@
 import unittest
 
-from scipy.integrate import dblquad
+from scipy.integrate import quad, dblquad
 
 from bin_model import *
 
@@ -1227,3 +1227,404 @@ class TestKernelTensor(unittest.TestCase):
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
         self.assertEqual(ktens.data[0,5,0], expected)
+
+    def test_calc_rate(self):
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f)
+        self.assertEqual(f.shape, dfdt.shape)
+        # Expected value in first bin.
+        idx = 0
+        expected_bot = 0
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                expected_bot -= ktens.data[idx,i,j] * f[idx] * f[i]
+        expected_bot /= bw[idx]
+        # Expected value in fourth bin.
+        idx = 3
+        expected_middle = 0
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                expected_middle -= ktens.data[idx,i,j] * f[idx] * f[i]
+        for i in range(nb):
+            for j in range(nb):
+                k_idx = idx - ktens.idxs[i,j]
+                num = ktens.nums[i,j]
+                if 0 <= k_idx < num:
+                    expected_middle += ktens.data[i,j,k_idx] * f[i] * f[j]
+        expected_middle /= bw[idx]
+        # Expected value in top bin.
+        idx = 5
+        expected_top = 0
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                expected_top -= ktens.data[idx,i,j] * f[idx] * f[i]
+        for i in range(nb):
+            for j in range(nb):
+                k_idx = idx - ktens.idxs[i,j]
+                num = ktens.nums[i,j]
+                if 0 <= k_idx < num:
+                    expected_top += ktens.data[i,j,k_idx] * f[i] * f[j]
+        expected_top /= bw[idx]
+        # Expected value in extra bin.
+        idx = 6
+        expected_extra = 0
+        for i in range(nb):
+            for j in range(nb):
+                k_idx = idx - ktens.idxs[i,j]
+                num = ktens.nums[i,j]
+                if 0 <= k_idx < num:
+                    expected_extra += ktens.data[i,j,k_idx] * f[i] * f[j]
+        self.assertAlmostEqual(dfdt[0], expected_bot, places=25)
+        self.assertAlmostEqual(dfdt[3], expected_middle, places=25)
+        self.assertAlmostEqual(dfdt[5], expected_top, places=25)
+        self.assertAlmostEqual(dfdt[6], expected_extra, places=25)
+        mass_change = np.zeros((nb+1,))
+        mass_change[:nb] = dfdt[:nb] * bw
+        mass_change[-1] = dfdt[-1]
+        self.assertAlmostEqual(np.sum(mass_change/mass_change.max()), 0.)
+
+    def test_calc_rate_closed(self):
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.kernel, self.grid, boundary='closed')
+        f = np.linspace(1., nb, nb)
+        dfdt = ktens.calc_rate(f)
+        self.assertEqual(f.shape, dfdt.shape)
+        # Expected value in first bin.
+        idx = 0
+        expected_bot = 0
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                expected_bot -= ktens.data[idx,i,j] * f[idx] * f[i]
+        expected_bot /= bw[idx]
+        # Expected value in fourth bin.
+        idx = 3
+        expected_middle = 0
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                expected_middle -= ktens.data[idx,i,j] * f[idx] * f[i]
+        for i in range(nb):
+            for j in range(nb):
+                k_idx = idx - ktens.idxs[i,j]
+                num = ktens.nums[i,j]
+                if 0 <= k_idx < num:
+                    expected_middle += ktens.data[i,j,k_idx] * f[i] * f[j]
+        expected_middle /= bw[idx]
+        # Expected value in top bin.
+        idx = 5
+        expected_top = 0
+        for i in range(nb-1):
+            for j in range(nb):
+                k_idx = idx - ktens.idxs[i,j]
+                num = ktens.nums[i,j]
+                if 0 <= k_idx < num:
+                    expected_top += ktens.data[i,j,k_idx] * f[i] * f[j]
+        expected_top /= bw[idx]
+        self.assertAlmostEqual(dfdt[0], expected_bot, places=25)
+        self.assertAlmostEqual(dfdt[3], expected_middle, places=25)
+        self.assertAlmostEqual(dfdt[5], expected_top, places=25)
+        mass_change = dfdt * bw
+        self.assertAlmostEqual(np.sum(mass_change/mass_change.max()), 0.)
+
+    def test_calc_rate_valid_sizes(self):
+        nb = self.num_bins
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(1., nb+2, nb+2)
+        with self.assertRaises(AssertionError):
+            ktens.calc_rate(f)
+        with self.assertRaises(AssertionError):
+            ktens.calc_rate(f[:nb-1])
+        dfdt_1 = ktens.calc_rate(f[:nb+1])
+        dfdt_2 = ktens.calc_rate(f[:nb])
+        self.assertEqual(len(dfdt_1), nb+1)
+        self.assertEqual(len(dfdt_2), nb)
+        for i in range(nb):
+            self.assertEqual(dfdt_1[i], dfdt_2[i])
+
+    def test_calc_rate_no_closed_boundary_flux(self):
+        nb = self.num_bins
+        ktens = KernelTensor(self.kernel, self.grid, boundary='closed')
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f)
+        self.assertEqual(dfdt[-1], 0.)
+
+    def test_calc_rate_valid_shapes(self):
+        nb = self.num_bins
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f)
+        f_row = np.reshape(f, (1, nb+1))
+        dfdt_row = ktens.calc_rate(f_row)
+        self.assertEqual(dfdt_row.shape, f_row.shape)
+        for i in range(nb+1):
+            self.assertAlmostEqual(dfdt_row[0,i], dfdt[i], places=25)
+        f_col = np.reshape(f, (nb+1, 1))
+        dfdt_col = ktens.calc_rate(f_col)
+        self.assertEqual(dfdt_col.shape, f_col.shape)
+        for i in range(nb+1):
+            self.assertAlmostEqual(dfdt_col[i,0], dfdt[i], places=25)
+        f = np.linspace(1., nb, nb)
+        dfdt = ktens.calc_rate(f)
+        f_row = np.reshape(f, (1, nb))
+        dfdt_row = ktens.calc_rate(f_row)
+        self.assertEqual(dfdt_row.shape, f_row.shape)
+        for i in range(nb):
+            self.assertAlmostEqual(dfdt_row[0,i], dfdt[i], places=25)
+        f_col = np.reshape(f, (nb, 1))
+        dfdt_col = ktens.calc_rate(f_col)
+        self.assertEqual(dfdt_col.shape, f_col.shape)
+        for i in range(nb):
+            self.assertAlmostEqual(dfdt_col[i,0], dfdt[i], places=25)
+
+    def test_calc_rate_force_out_flux(self):
+        nb = self.num_bins
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f[:nb], out_flux=True)
+        expected = ktens.calc_rate(f[:nb+1])
+        self.assertEqual(len(dfdt), nb+1)
+        for i in range(nb+1):
+            self.assertEqual(dfdt[i], expected[i])
+
+    def test_calc_rate_force_no_out_flux(self):
+        nb = self.num_bins
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f, out_flux=False)
+        expected = ktens.calc_rate(f[:nb])
+        self.assertEqual(len(dfdt), nb)
+        for i in range(nb):
+            self.assertEqual(dfdt[i], expected[i])
+
+    def test_calc_rate_derivative(self):
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(2., nb+1, nb+1)
+        dfdt, rate_deriv = ktens.calc_rate(f, derivative=True)
+        self.assertEqual(rate_deriv.shape, (nb+1, nb+1))
+        # First column, perturbation in lowest bin.
+        idx = 0
+        expected = np.zeros((nb+1,))
+        # Effect of increased fluxes out of this bin.
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                this_rate = ktens.data[idx,i,j] * f[i]
+                expected[idx] -= this_rate
+                expected[ktens.idxs[idx,i] + j] += this_rate
+        # Effect of increased transfer of mass out of other bins.
+        # (Including this one; the double counting is correct.)
+        for i in range(nb):
+            for j in range(ktens.nums[i,idx]):
+                this_rate = ktens.data[i,idx,j] * f[i]
+                expected[i] -= this_rate
+                expected[ktens.idxs[i,idx] + j] += this_rate
+        expected[:nb] /= bw
+        for i in range(nb+1):
+            self.assertAlmostEqual(rate_deriv[i,idx], expected[i], places=25)
+        # Last column, perturbation in highest bin.
+        idx = 5
+        expected = np.zeros((nb+1,))
+        # Effect of increased fluxes out of this bin.
+        for i in range(nb):
+            for j in range(ktens.nums[idx,i]):
+                this_rate = ktens.data[idx,i,j] * f[i]
+                expected[idx] -= this_rate
+                expected[ktens.idxs[idx,i] + j] += this_rate
+        # Effect of increased transfer of mass out of other bins.
+        # (Including this one; the double counting is correct.)
+        for i in range(nb):
+            for j in range(ktens.nums[i,idx]):
+                this_rate = ktens.data[i,idx,j] * f[i]
+                expected[i] -= this_rate
+                expected[ktens.idxs[i,idx] + j] += this_rate
+        expected[:nb] /= bw
+        for i in range(nb+1):
+            self.assertAlmostEqual(rate_deriv[i,idx], expected[i], places=25)
+        # Effect of perturbations to bottom bin should be 0.
+        for i in range(nb+1):
+            self.assertEqual(rate_deriv[i,6], 0.)
+
+    def test_calc_rate_derivative_no_out_flux(self):
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.kernel, self.grid)
+        f = np.linspace(2., nb+1, nb+1)
+        _, rate_deriv = ktens.calc_rate(f, derivative=True, out_flux=False)
+        self.assertEqual(rate_deriv.shape, (nb, nb))
+        _, outflux_rate_deriv = ktens.calc_rate(f, derivative=True)
+        for i in range(nb):
+            for j in range(nb):
+                self.assertAlmostEqual(rate_deriv[i,j],
+                                       outflux_rate_deriv[i,j],
+                                       places=25)
+
+
+class TestLowerGammaDeriv(unittest.TestCase):
+    """
+    Tests of lower incomplete gamma function derivative.
+    """
+
+    def test_lower_gamma_deriv(self):
+        s = 1.
+        x = 2.5
+        low_gam = lambda s, x: gammainc(s, x) * gamma(s)
+        perturb = 1.e-6
+        # Richardson extrapolation.
+        expected = (4. * low_gam(s+perturb, x)
+                    - low_gam(s+2.*perturb, x)
+                    - 3. * low_gam(s, x)) / (2.*perturb)
+        actual = lower_gamma_deriv(s, x)
+        self.assertAlmostEqual(actual / expected, 1.)
+
+    def test_lower_gamma_deriv_raises_for_negative_x(self):
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(1., 0.)
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(1., -1.)
+
+    def test_lower_gamma_deriv_raises_for_negative_atol(self):
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(1., 1., atol=0.)
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(1., 1., atol=-1.)
+
+    def test_lower_gamma_deriv_raises_for_negative_rtol(self):
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(1., 1., rtol=0.)
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(1., 1., rtol=-1.)
+
+    def test_lower_gamma_deriv_array_inputs(self):
+        s = np.array([3., 1.3])
+        x = np.array([2., 3.5])
+        expected = np.array([lower_gamma_deriv(s[0], x[0]),
+                             lower_gamma_deriv(s[0], x[1])])
+        actual = lower_gamma_deriv(s[0], x)
+        for i in range(2):
+            self.assertAlmostEqual(actual[i], expected[i])
+        expected = np.array([lower_gamma_deriv(s[0], x[0]),
+                             lower_gamma_deriv(s[1], x[0])])
+        actual = lower_gamma_deriv(s, x[0])
+        for i in range(2):
+            self.assertAlmostEqual(actual[i], expected[i])
+        expected = np.array([lower_gamma_deriv(s[0], x[0]),
+                             lower_gamma_deriv(s[1], x[1])])
+        actual = lower_gamma_deriv(s, x)
+        for i in range(2):
+            self.assertAlmostEqual(actual[i], expected[i])
+
+    def test_lower_gamma_deriv_mismatched_shape_raises(self):
+        s = np.array([3., 1.3])
+        x = np.array([2., 3.5, 6.])
+        with self.assertRaises(AssertionError):
+            lower_gamma_deriv(s, x)
+
+    def test_lower_gamma_deriv_large_x(self):
+        s = 8.
+        x = 25.535422793161228
+        actual = lower_gamma_deriv(s, x)
+        low_gam = lambda s, x: gammainc(s, x) * gamma(s)
+        perturb = 1.e-6
+        # Richardson extrapolation.
+        expected = (4. * low_gam(s+perturb, x)
+                    - low_gam(s+2.*perturb, x)
+                    - 3. * low_gam(s, x)) / (2.*perturb)
+        self.assertAlmostEqual(lower_gamma_deriv(s, x) / expected, 1.)
+
+
+class TestGammaDistD(unittest.TestCase):
+    """
+    Tests of gamma_dist_d and related functions.
+
+    The functions tested by this class use a gamma distribution over the
+    *diameter*, not the particle *mass*.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=2.e-6,
+                                      num_bins=6)
+
+    def test_gamma_dist_d(self):
+        grid = self.grid
+        nb = grid.num_bins
+        bbd = grid.bin_bounds_d
+        bw = grid.bin_widths
+        nu = 5.
+        lam = nu / 1.5e-6
+        actual = gamma_dist_d(grid, lam, nu)
+        self.assertEqual(len(actual), nb)
+        # Note that we add 3 to nu here to get mass weighted distribution.
+        f = lambda x: lam**(nu+3.) * x**(nu+2.) * np.exp(-lam*x) / gamma(nu+3)
+        expected = np.zeros((nb,))
+        for i in range(nb):
+            y, _ = quad(f, bbd[i], bbd[i+1])
+            expected[i] = y / bw[i]
+        max_expected = np.abs(expected).max()
+        for i in range(nb):
+            self.assertAlmostEqual(actual[i] / max_expected,
+                                   expected[i] / max_expected)
+
+    def test_gamma_dist_d_lam_deriv(self):
+        grid = self.grid
+        nb = grid.num_bins
+        nu = 5.
+        lam = nu / 1.5e-6
+        actual = gamma_dist_d_lam_deriv(grid, lam, nu)
+        self.assertEqual(len(actual), nb)
+        perturb = 1.
+        # Richardson extrapolation.
+        expected = (4. * gamma_dist_d(grid, lam+perturb, nu)
+                    - gamma_dist_d(grid, lam+2.*perturb, nu)
+                    - 3. * gamma_dist_d(grid, lam, nu)) \
+                        / (2.*perturb)
+        max_expected = np.abs(expected).max()
+        for i in range(nb):
+            self.assertAlmostEqual(actual[i] / max_expected,
+                                   expected[i] / max_expected)
+
+    def test_gamma_dist_d_nu_deriv(self):
+        grid = self.grid
+        nb = grid.num_bins
+        nu = 5.
+        lam = nu / 1.5e-6
+        actual = gamma_dist_d_nu_deriv(grid, lam, nu)
+        self.assertEqual(len(actual), nb)
+        perturb = 1.e-6
+        # Richardson extrapolation.
+        expected = (4. * gamma_dist_d(grid, lam, nu+perturb)
+                    - gamma_dist_d(grid, lam, nu+2.*perturb)
+                    - 3. * gamma_dist_d(grid, lam, nu)) \
+                        / (2.*perturb)
+        max_expected = np.abs(expected).max()
+        for i in range(nb):
+            self.assertAlmostEqual(actual[i] / max_expected,
+                                   expected[i] / max_expected)
+
+    def test_gamma_dist_d_nu_deriv_small_lam(self):
+        grid = self.grid
+        nb = grid.num_bins
+        nu = 5.
+        lam = nu / 1.5e-7
+        actual = gamma_dist_d_nu_deriv(grid, lam, nu)
+        self.assertEqual(len(actual), nb)
+        perturb = 1.e-3
+        # Richardson extrapolation.
+        expected = (4. * gamma_dist_d(grid, lam, nu+perturb)
+                    - gamma_dist_d(grid, lam, nu+2.*perturb)
+                    - 3. * gamma_dist_d(grid, lam, nu)) \
+                        / (2.*perturb)
+        max_expected = np.abs(expected).max()
+        for i in range(nb):
+            self.assertAlmostEqual(actual[i] / max_expected,
+                                   expected[i] / max_expected,
+                                   places=5)
