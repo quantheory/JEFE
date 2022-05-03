@@ -62,6 +62,12 @@ class TestModelConstants(unittest.TestCase):
     def test_rain_m(self):
         self.assertEqual(self.constants.rain_m, 1.)
 
+    def test_mass_conc_scale(self):
+        self.assertEqual(self.constants.mass_conc_scale, 1.)
+
+    def test_time_scale(self):
+        self.assertEqual(self.constants.time_scale, 1.)
+
 
 class TestKernel(unittest.TestCase):
     """
@@ -529,7 +535,7 @@ class TestLongKernel(unittest.TestCase):
 
     def test_kc_cgs(self):
         kernel = LongKernel(self.constants, kc_cgs=3.)
-        expected = 3. * self.constants.rho_air * self.constants.std_mass**2
+        expected = 3. * self.constants.std_mass**2
         self.assertAlmostEqual(kernel.kc, expected, places=25)
 
     def test_kc_si(self):
@@ -544,7 +550,7 @@ class TestLongKernel(unittest.TestCase):
 
     def test_kr_si(self):
         kernel = LongKernel(self.constants, kr_si=3.)
-        expected = 3. * self.constants.rho_air * self.constants.std_mass
+        expected = 3. * self.constants.std_mass
         self.assertAlmostEqual(kernel.kr, expected, places=15)
 
     def test_kr_cgs(self):
@@ -891,7 +897,7 @@ class TestLongKernel(unittest.TestCase):
         lz1 = 0.
         lz2 = 1.
         actual = kernel.integrate_over_bins(lx1, lx2, ly1, ly2, lz1, lz2)
-        expected = 3.773318473671634e-09
+        expected = 3.1444320613930285e-09
         self.assertAlmostEqual(actual, expected, places=20)
 
 
@@ -1120,7 +1126,6 @@ class TestKernelTensor(unittest.TestCase):
         nb = self.num_bins
         bb = self.grid.bin_bounds
         ktens = KernelTensor(self.kernel, self.grid)
-        self.assertEqual(ktens.scaling, 1.)
         self.assertEqual(ktens.boundary, 'open')
         idxs, nums, max_num = self.grid.construct_sparsity_structure()
         self.assertEqual(ktens.idxs.shape, idxs.shape)
@@ -1139,7 +1144,7 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = bb[3]
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[0,0,0], expected)
+        self.assertAlmostEqual(ktens.data[0,0,0], expected / ktens.scaling)
         lx1 = bb[0]
         lx2 = bb[1]
         ly1 = bb[1]
@@ -1148,10 +1153,10 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = bb[4]
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[0,1,1], expected)
+        self.assertAlmostEqual(ktens.data[0,1,1], expected / ktens.scaling)
         expected = self.kernel.integrate_over_bins(ly1, ly2, lx1, lx2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[1,0,1], expected)
+        self.assertAlmostEqual(ktens.data[1,0,1], expected / ktens.scaling)
         lx1 = bb[5]
         lx2 = bb[6]
         ly1 = bb[5]
@@ -1160,7 +1165,7 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = np.inf
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[5,5,0], expected)
+        self.assertAlmostEqual(ktens.data[5,5,0], expected / ktens.scaling)
         lx1 = bb[0]
         lx2 = bb[1]
         ly1 = bb[5]
@@ -1169,7 +1174,7 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = bb[6]
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[0,5,0], expected)
+        self.assertAlmostEqual(ktens.data[0,5,0], expected / ktens.scaling)
         lx1 = bb[0]
         lx2 = bb[1]
         ly1 = bb[5]
@@ -1178,17 +1183,41 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = np.inf
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[0,5,1], expected)
+        self.assertAlmostEqual(ktens.data[0,5,1], expected / ktens.scaling)
 
     def test_kernel_init_scaling(self):
-        ktens = KernelTensor(self.kernel, self.grid, scaling=2.)
-        self.assertEqual(ktens.scaling, 2.)
-        ktens_noscale = KernelTensor(self.kernel, self.grid)
+        const = ModelConstants(rho_water=1000.,
+                               rho_air=1.2,
+                               std_diameter=1.e-4,
+                               rain_d=1.e-4,
+                               mass_conc_scale = 2.,
+                               time_scale=3.)
+        kernel = LongKernel(const)
+        grid = GeometricMassGrid(const,
+                                 d_min=1.e-6,
+                                 d_max=2.e-6,
+                                 num_bins=self.num_bins)
+        ktens = KernelTensor(kernel, grid)
+        self.assertEqual(ktens.scaling, const.std_mass
+                             / (const.mass_conc_scale * const.time_scale))
+        const = ModelConstants(rho_water=1000.,
+                               rho_air=1.2,
+                               std_diameter=1.e-4,
+                               rain_d=1.e-4,
+                               mass_conc_scale=1.,
+                               time_scale=1.)
+        kernel = LongKernel(const)
+        grid = GeometricMassGrid(const,
+                                 d_min=1.e-6,
+                                 d_max=2.e-6,
+                                 num_bins=self.num_bins)
+        ktens_noscale = KernelTensor(kernel, grid)
         self.assertEqual(ktens.data.shape, ktens_noscale.data.shape)
         for i in range(len(ktens.data.flat)):
             self.assertAlmostEqual(ktens.data.flat[i],
-                                   ktens_noscale.data.flat[i]/2.,
-                                   places=25)
+                                   ktens_noscale.data.flat[i]
+                                       * const.std_mass
+                                       / ktens.scaling)
 
     def test_kernel_init_invalid_boundary_raises(self):
         with self.assertRaises(AssertionError):
@@ -1217,7 +1246,7 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = np.inf
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[5,5,0], expected)
+        self.assertAlmostEqual(ktens.data[5,5,0], expected / ktens.scaling)
         lx1 = bb[0]
         lx2 = bb[1]
         ly1 = bb[5]
@@ -1226,7 +1255,7 @@ class TestKernelTensor(unittest.TestCase):
         lz2 = np.inf
         expected = self.kernel.integrate_over_bins(lx1, lx2, ly1, ly2,
                                                    lz1, lz2)
-        self.assertEqual(ktens.data[0,5,0], expected)
+        self.assertAlmostEqual(ktens.data[0,5,0], expected / ktens.scaling)
 
     def test_calc_rate(self):
         nb = self.num_bins
@@ -1277,10 +1306,10 @@ class TestKernelTensor(unittest.TestCase):
                 num = ktens.nums[i,j]
                 if 0 <= k_idx < num:
                     expected_extra += ktens.data[i,j,k_idx] * f[i] * f[j]
-        self.assertAlmostEqual(dfdt[0], expected_bot, places=25)
-        self.assertAlmostEqual(dfdt[3], expected_middle, places=25)
-        self.assertAlmostEqual(dfdt[5], expected_top, places=25)
-        self.assertAlmostEqual(dfdt[6], expected_extra, places=25)
+        self.assertAlmostEqual(dfdt[0], expected_bot, places=15)
+        self.assertAlmostEqual(dfdt[3], expected_middle, places=15)
+        self.assertAlmostEqual(dfdt[5], expected_top, places=15)
+        self.assertAlmostEqual(dfdt[6], expected_extra, places=15)
         mass_change = np.zeros((nb+1,))
         mass_change[:nb] = dfdt[:nb] * bw
         mass_change[-1] = dfdt[-1]
@@ -1628,3 +1657,1156 @@ class TestGammaDistD(unittest.TestCase):
             self.assertAlmostEqual(actual[i] / max_expected,
                                    expected[i] / max_expected,
                                    places=5)
+
+
+class TestModelStateDescriptor(unittest.TestCase):
+    """
+    Test ModelStateDescriptor methods and attributes.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3)
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=90)
+
+    def test_init(self):
+        const = self.constants
+        grid = self.grid
+        desc = ModelStateDescriptor(const, grid)
+        self.assertEqual(desc.dsd_scale, const.mass_conc_scale)
+
+    def test_state_len_dsd_only(self):
+        const = self.constants
+        grid = self.grid
+        desc = ModelStateDescriptor(const, grid)
+        self.assertEqual(desc.state_len(), grid.num_bins+1)
+
+    def test_dsd_loc(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        self.assertEqual(desc.dsd_loc(), (0, nb))
+
+    def test_dsd_loc_with_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        self.assertEqual(desc.dsd_loc(with_fallout=True), (0, nb+1))
+
+    def test_fallout_loc(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        self.assertEqual(desc.fallout_loc(), nb)
+
+    def test_dsd_raw(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        raw = np.linspace(0., nb+1, nb+1)
+        actual = desc.dsd_raw(raw)
+        self.assertEqual(len(actual), nb)
+        for i in range(nb):
+            self.assertEqual(actual[i], raw[i])
+
+    def test_dsd_raw_with_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        raw = np.linspace(0., nb+1, nb+1)
+        actual = desc.dsd_raw(raw, with_fallout=True)
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertEqual(actual[i], raw[i])
+
+    def test_fallout_raw(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        raw = np.linspace(0., nb+1, nb+1)
+        self.assertEqual(desc.fallout_raw(raw), raw[nb])
+
+    def test_construct_raw(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        dsd_scale = desc.dsd_scale
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        raw = desc.construct_raw(dsd, fallout=fallout)
+        self.assertEqual(len(raw), desc.state_len())
+        actual_dsd = desc.dsd_raw(raw)
+        self.assertEqual(len(actual_dsd), nb)
+        for i in range(nb):
+            self.assertAlmostEqual(actual_dsd[i], dsd[i] / dsd_scale)
+        self.assertAlmostEqual(desc.fallout_raw(raw), fallout / dsd_scale)
+
+    def test_construct_raw_wrong_dsd_size_raises(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb+1, nb+1)
+        with self.assertRaises(AssertionError):
+            desc.construct_raw(dsd)
+        dsd = np.linspace(0, nb-1, nb-1)
+        with self.assertRaises(AssertionError):
+            desc.construct_raw(dsd)
+
+    def test_construct_raw_fallout_default_zero(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb, nb)
+        raw = desc.construct_raw(dsd)
+        self.assertEqual(desc.fallout_raw(raw), 0.)
+
+    def test_no_derivatives(self):
+        const = self.constants
+        grid = self.grid
+        desc = ModelStateDescriptor(const, grid)
+        self.assertEqual(desc.dsd_deriv_num, 0)
+        self.assertEqual(desc.dsd_deriv_names, [])
+        self.assertEqual(len(desc.dsd_deriv_scales), 0)
+
+    def test_derivatives(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        self.assertEqual(desc.dsd_deriv_num, len(dsd_deriv_names))
+        self.assertEqual(desc.dsd_deriv_names, dsd_deriv_names)
+        for i in range(2):
+            self.assertEqual(desc.dsd_deriv_scales[i], dsd_deriv_scales[i])
+        self.assertEqual(desc.state_len(), 3*nb+3)
+
+    def test_empty_derivatives(self):
+        const = self.constants
+        grid = self.grid
+        desc = ModelStateDescriptor(const, grid)
+        dsd_deriv_names = []
+        dsd_deriv_scales = np.zeros((0,))
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        self.assertEqual(desc.dsd_deriv_num, 0)
+        self.assertEqual(desc.dsd_deriv_names, [])
+        self.assertEqual(len(desc.dsd_deriv_scales), 0)
+
+    def test_derivatives_raises_on_duplicate(self):
+        const = self.constants
+        grid = self.grid
+        dsd_deriv_names = ['lambda', 'lambda']
+        with self.assertRaises(AssertionError):
+            desc = ModelStateDescriptor(const, grid,
+                                        dsd_deriv_names=dsd_deriv_names)
+
+    def test_derivatives_default_scales(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        self.assertEqual(len(desc.dsd_deriv_scales), 2)
+        self.assertEqual(desc.dsd_deriv_scales[0], 1.)
+        self.assertEqual(desc.dsd_deriv_scales[1], 1.)
+
+    def test_derivatives_raises_for_extra_scales(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_scales = np.array([3., 4.])
+        with self.assertRaises(AssertionError):
+            ModelStateDescriptor(const, grid,
+                                 dsd_deriv_scales=dsd_deriv_scales)
+
+    def test_derivatives_raises_for_mismatched_scale_num(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda']
+        dsd_deriv_scales = np.array([3., 4.])
+        with self.assertRaises(AssertionError):
+            ModelStateDescriptor(const, grid,
+                                 dsd_deriv_names=dsd_deriv_names,
+                                 dsd_deriv_scales=dsd_deriv_scales)
+
+    def test_dsd_deriv_loc_all(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idxs, num = desc.dsd_deriv_loc()
+        self.assertEqual(idxs, [nb+1, 2*nb+2])
+        self.assertEqual(num, nb)
+
+    def test_dsd_deriv_loc_all_with_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idxs, num = desc.dsd_deriv_loc(with_fallout=True)
+        self.assertEqual(idxs, [nb+1, 2*nb+2])
+        self.assertEqual(num, nb+1)
+
+    def test_dsd_deriv_loc_all_without_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idxs, num = desc.dsd_deriv_loc(with_fallout=False)
+        self.assertEqual(idxs, [nb+1, 2*nb+2])
+        self.assertEqual(num, nb)
+
+    def test_dsd_deriv_loc_individual(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idx, num = desc.dsd_deriv_loc('lambda')
+        self.assertEqual(idx, nb+1)
+        self.assertEqual(num, nb)
+        idx, num = desc.dsd_deriv_loc('nu')
+        self.assertEqual(idx, 2*nb+2)
+        self.assertEqual(num, nb)
+
+    def test_dsd_deriv_loc_individual_with_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idx, num = desc.dsd_deriv_loc('lambda', with_fallout=True)
+        self.assertEqual(idx, nb+1)
+        self.assertEqual(num, nb+1)
+        idx, num = desc.dsd_deriv_loc('nu', with_fallout=True)
+        self.assertEqual(idx, 2*nb+2)
+        self.assertEqual(num, nb+1)
+
+    def test_dsd_deriv_loc_individual_without_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idx, num = desc.dsd_deriv_loc('lambda', with_fallout=False)
+        self.assertEqual(idx, nb+1)
+        self.assertEqual(num, nb)
+        idx, num = desc.dsd_deriv_loc('nu', with_fallout=False)
+        self.assertEqual(idx, 2*nb+2)
+        self.assertEqual(num, nb)
+
+    def test_dsd_deriv_loc_raises_for_bad_string(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        with self.assertRaises(ValueError):
+            desc.dsd_deriv_loc('nonsense')
+
+    def test_fallout_deriv_loc_all(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idxs = desc.fallout_deriv_loc()
+        self.assertEqual(idxs, [2*nb+1, 3*nb+2])
+
+    def test_fallout_deriv_loc_individual(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        idx = desc.fallout_deriv_loc('lambda')
+        self.assertEqual(idx, 2*nb+1)
+        idx = desc.fallout_deriv_loc('nu')
+        self.assertEqual(idx, 3*nb+2)
+
+    def test_fallout_deriv_loc_raises_for_bad_string(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        with self.assertRaises(ValueError):
+            idxs = desc.fallout_deriv_loc('nonsense')
+
+    def test_dsd_deriv_raw_all(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        derivs = desc.dsd_deriv_raw(raw)
+        self.assertEqual(derivs.shape, (2, nb))
+        for i in range(nb):
+            self.assertEqual(derivs[0,i], raw[nb+1+i])
+            self.assertEqual(derivs[1,i], raw[2*nb+2+i])
+
+    def test_dsd_deriv_raw_all_with_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        derivs = desc.dsd_deriv_raw(raw, with_fallout=True)
+        self.assertEqual(derivs.shape, (2, nb+1))
+        for i in range(nb+1):
+            self.assertEqual(derivs[0,i], raw[nb+1+i])
+            self.assertEqual(derivs[1,i], raw[2*nb+2+i])
+
+    def test_dsd_deriv_raw_individual(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        deriv = desc.dsd_deriv_raw(raw, 'lambda')
+        self.assertEqual(len(deriv), nb)
+        for i in range(nb):
+            self.assertEqual(deriv[i], raw[nb+1+i])
+        deriv = desc.dsd_deriv_raw(raw, 'nu')
+        self.assertEqual(len(deriv), nb)
+        for i in range(nb):
+            self.assertEqual(deriv[i], raw[2*nb+2+i])
+
+    def test_dsd_deriv_raw_individual_with_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        deriv = desc.dsd_deriv_raw(raw, 'lambda', with_fallout=True)
+        self.assertEqual(len(deriv), nb+1)
+        for i in range(nb+1):
+            self.assertEqual(deriv[i], raw[nb+1+i])
+        deriv = desc.dsd_deriv_raw(raw, 'nu', with_fallout=True)
+        self.assertEqual(len(deriv), nb+1)
+        for i in range(nb+1):
+            self.assertEqual(deriv[i], raw[2*nb+2+i])
+
+    def test_dsd_deriv_raw_raises_for_bad_string(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        with self.assertRaises(ValueError):
+            desc.dsd_deriv_raw(raw, 'nonsense')
+
+    def test_fallout_deriv_raw_all(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        fallout_derivs = desc.fallout_deriv_raw(raw)
+        self.assertEqual(len(fallout_derivs), 2)
+        for i in range(2):
+            self.assertEqual(fallout_derivs[i], raw[nb+(i+1)*(nb+1)])
+
+    def test_fallout_deriv_raw_individual(self):
+        const = self.constants
+        grid = self.grid
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        raw = np.linspace(0, 3*nb, 3*nb+3)
+        fallout_deriv = desc.fallout_deriv_raw(raw, 'lambda')
+        self.assertEqual(fallout_deriv, raw[2*nb+1])
+        fallout_deriv = desc.fallout_deriv_raw(raw, 'nu')
+        self.assertEqual(fallout_deriv, raw[3*nb+2])
+
+    def test_construct_raw_with_derivatives(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd_scale = desc.dsd_scale
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+        self.assertEqual(len(raw), desc.state_len())
+        actual_dsd_deriv = desc.dsd_deriv_raw(raw)
+        self.assertEqual(actual_dsd_deriv.shape, dsd_deriv.shape)
+        for i in range(len(actual_dsd_deriv.flat)):
+            self.assertAlmostEqual(actual_dsd_deriv.flat[i],
+                                   dsd_deriv.flat[i] / dsd_scale)
+
+    def test_construct_raw_raises_for_missing_derivative(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        with self.assertRaises(AssertionError):
+            raw = desc.construct_raw(dsd, fallout=fallout)
+
+    def test_construct_raw_raises_for_extra_derivative(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        with self.assertRaises(AssertionError):
+            raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+
+    def test_construct_raw_raises_for_wrong_derivative_shape(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb+1))
+        with self.assertRaises(AssertionError):
+            desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+        dsd_deriv = np.zeros((3, nb))
+        with self.assertRaises(AssertionError):
+            desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+
+    def test_construct_raw_allows_empty_derivative(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((0, nb))
+        # Just checking that this doesn't throw an exception.
+        desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+
+    def test_construct_raw_with_derivatives_scaling(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        dsd_scale = desc.dsd_scale
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+        self.assertEqual(len(raw), desc.state_len())
+        actual_dsd_deriv = desc.dsd_deriv_raw(raw)
+        self.assertEqual(actual_dsd_deriv.shape, dsd_deriv.shape)
+        for i in range(2):
+            for j in range(nb):
+                self.assertAlmostEqual(actual_dsd_deriv[i,j],
+                                       dsd_deriv[i,j] / dsd_deriv_scales[i]
+                                          / dsd_scale)
+
+    def test_construct_raw_with_fallout_derivatives(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd_scale = desc.dsd_scale
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800.])
+        raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        self.assertEqual(len(raw), desc.state_len())
+        actual_fallout_deriv = desc.fallout_deriv_raw(raw)
+        self.assertEqual(len(actual_fallout_deriv), 2)
+        for i in range(2):
+            self.assertAlmostEqual(actual_fallout_deriv[i],
+                                   fallout_deriv[i] / dsd_scale)
+
+    def test_construct_raw_missing_fallout_derivative_is_zero(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv)
+        self.assertEqual(len(raw), desc.state_len())
+        actual_fallout_deriv = desc.fallout_deriv_raw(raw)
+        self.assertEqual(len(actual_fallout_deriv), 2)
+        for i in range(2):
+            self.assertAlmostEqual(actual_fallout_deriv[i], 0.)
+
+    def test_construct_raw_with_fallout_deriv_raises_for_wrong_length(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800., 900.])
+        with self.assertRaises(AssertionError):
+            raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv,
+                                     fallout_deriv=fallout_deriv)
+
+    def test_construct_raw_with_extra_fallout_deriv_raises(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        fallout_deriv = np.array([700., 800., 900.])
+        with self.assertRaises(AssertionError):
+            raw = desc.construct_raw(dsd, fallout=fallout,
+                                     fallout_deriv=fallout_deriv)
+
+    def test_construct_raw_allows_empty_fallout(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        fallout_deriv = np.zeros((0,))
+        raw = desc.construct_raw(dsd, fallout=fallout,
+                                 fallout_deriv=fallout_deriv)
+
+    def test_construct_raw_with_derivatives_scaling(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        dsd_scale = desc.dsd_scale
+        dsd = np.linspace(0, nb, nb)
+        fallout = 200.
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800.])
+        raw = desc.construct_raw(dsd, fallout=fallout, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        self.assertEqual(len(raw), desc.state_len())
+        actual_fallout_deriv = desc.fallout_deriv_raw(raw)
+        self.assertEqual(actual_fallout_deriv.shape, fallout_deriv.shape)
+        for i in range(2):
+            self.assertAlmostEqual(actual_fallout_deriv[i],
+                                   fallout_deriv[i] / dsd_deriv_scales[i]
+                                      / dsd_scale)
+
+
+class TestModelState(unittest.TestCase):
+    """
+    Test ModelState methods and attributes.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3,
+                                        time_scale=400.)
+        nb = 90
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=nb)
+        self.desc = ModelStateDescriptor(self.constants,
+                                         self.grid)
+        self.dsd = np.linspace(0, nb, nb)
+        self.fallout = 200.
+        self.raw = self.desc.construct_raw(self.dsd, self.fallout)
+
+    def test_init(self):
+        desc = self.desc
+        state = ModelState(desc, self.raw)
+        self.assertEqual(len(state.raw), desc.state_len())
+
+    def test_dsd(self):
+        desc = self.desc
+        nb = self.grid.num_bins
+        state = ModelState(desc, self.raw)
+        actual = state.dsd()
+        self.assertEqual(len(actual), nb)
+        for i in range(nb):
+            self.assertAlmostEqual(actual[i], self.dsd[i])
+
+    def test_fallout(self):
+        desc = self.desc
+        state = ModelState(desc, self.raw)
+        self.assertEqual(state.fallout(), self.fallout)
+
+    def test_dsd_moment(self):
+        grid = self.grid
+        desc = self.desc
+        nu = 5.
+        lam = nu / 1.e-5
+        dsd = (np.pi/6. * self.constants.rho_water) \
+            * gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3),
+                               1., places=6)
+        # Note the fairly low accuracy in the moment calculations at modest
+        # grid resolutions.
+        self.assertAlmostEqual(state.dsd_moment(6)
+                               / (lam**-3 * (nu + 3.) * (nu + 4.) * (nu + 5.)),
+                               1.,
+                               places=2)
+        self.assertAlmostEqual(state.dsd_moment(0)
+                               / (lam**3 / (nu * (nu + 1.) * (nu + 2.))
+                               * (1. - gammainc(nu, lam*grid.bin_bounds_d[0]))),
+                               1.,
+                               places=2)
+
+    def test_dsd_moment_cloud_only_and_rain_only_raises(self):
+        desc = self.desc
+        state = ModelState(desc, self.raw)
+        state.dsd_moment(3, cloud_only=True, rain_only=False)
+        state.dsd_moment(3, cloud_only=False, rain_only=True)
+        state.dsd_moment(3, cloud_only=False, rain_only=False)
+        with self.assertRaises(AssertionError):
+            state.dsd_moment(3, cloud_only=True, rain_only=True)
+
+    def test_dsd_cloud_moment(self):
+        grid = self.grid
+        desc = self.desc
+        nb = grid.num_bins
+        bw = grid.bin_widths
+        dsd = np.zeros((nb,))
+        dsd[0] = (np.pi/6. * self.constants.rho_water) / bw[0]
+        dsd[-1] = (np.pi/6. * self.constants.rho_water) / bw[-1]
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        # Make sure that only half the mass is counted.
+        self.assertAlmostEqual(state.dsd_moment(3, cloud_only=True),
+                               1.)
+        # Since almost all the number will be counted, these should be
+        # approximately equal.
+        self.assertAlmostEqual(state.dsd_moment(0, cloud_only=True)
+                               / state.dsd_moment(0),
+                               1.)
+
+    def test_dsd_cloud_moment_all_rain(self):
+        nb = 10
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=2.e-4,
+                                 d_max=1.e-3,
+                                 num_bins=nb)
+        desc = ModelStateDescriptor(self.constants,
+                                    grid)
+        dsd = np.ones((nb,))
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3, cloud_only=True), 0.)
+
+    def test_dsd_cloud_moment_all_cloud(self):
+        nb = 10
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=1.e-6,
+                                 d_max=1.e-5,
+                                 num_bins=nb)
+        desc = ModelStateDescriptor(self.constants,
+                                    grid)
+        dsd = np.ones((nb,))
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3, cloud_only=True),
+                               state.dsd_moment(3))
+
+    def test_dsd_cloud_moment_bin_spanning_threshold(self):
+        const = self.constants
+        nb = 1
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=5.e-5,
+                                 d_max=2.e-4,
+                                 num_bins=nb)
+        bb = grid.bin_bounds
+        bw = grid.bin_widths
+        desc = ModelStateDescriptor(self.constants,
+                                    grid)
+        dsd = (np.pi/6. * self.constants.rho_water) / bw
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3, cloud_only=True)
+                                   / state.dsd_moment(3),
+                               0.5)
+        self.assertAlmostEqual(state.dsd_moment(0, cloud_only=True)
+                                   / ((np.exp(-bb[0]) - (1./const.rain_m))
+                                      * dsd[0] / self.constants.std_mass),
+                               1.)
+
+    def test_dsd_rain_moment(self):
+        grid = self.grid
+        desc = self.desc
+        nb = grid.num_bins
+        bw = grid.bin_widths
+        dsd = np.zeros((nb,))
+        dsd[0] = (np.pi/6. * self.constants.rho_water) / bw[0]
+        dsd[-1] = (np.pi/6. * self.constants.rho_water) / bw[-1]
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        # Make sure that only half the mass is counted.
+        self.assertAlmostEqual(state.dsd_moment(3, rain_only=True),
+                               1.)
+        # Since almost all the M6 will be counted, these should be
+        # approximately equal.
+        self.assertAlmostEqual(state.dsd_moment(6, rain_only=True)
+                               / state.dsd_moment(6),
+                               1.)
+
+    def test_dsd_rain_moment_all_rain(self):
+        nb = 10
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=2.e-4,
+                                 d_max=1.e-3,
+                                 num_bins=nb)
+        desc = ModelStateDescriptor(self.constants,
+                                    grid)
+        dsd = np.ones((nb,))
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3, rain_only=True),
+                               state.dsd_moment(3))
+
+    def test_dsd_rain_moment_all_cloud(self):
+        nb = 10
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=1.e-6,
+                                 d_max=1.e-5,
+                                 num_bins=nb)
+        desc = ModelStateDescriptor(self.constants,
+                                    grid)
+        dsd = np.ones((nb,))
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3, rain_only=True), 0.)
+
+    def test_dsd_rain_moment_bin_spanning_threshold(self):
+        const = self.constants
+        nb = 1
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=5.e-5,
+                                 d_max=2.e-4,
+                                 num_bins=nb)
+        bb = grid.bin_bounds
+        bw = grid.bin_widths
+        desc = ModelStateDescriptor(self.constants,
+                                    grid)
+        dsd = (np.pi/6. * self.constants.rho_water) / bw
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        self.assertAlmostEqual(state.dsd_moment(3, rain_only=True)
+                                   / state.dsd_moment(3),
+                               0.5)
+        self.assertAlmostEqual(state.dsd_moment(0, rain_only=True)
+                                   / (((1./const.rain_m) - np.exp(-bb[1]))
+                                      * dsd[0] / self.constants.std_mass),
+                               1.)
+
+    def test_dsd_deriv_all(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        actual_dsd_deriv = state.dsd_deriv()
+        self.assertEqual(actual_dsd_deriv.shape, dsd_deriv.shape)
+        for i in range(2*nb):
+            self.assertAlmostEqual(actual_dsd_deriv.flat[i], dsd_deriv.flat[i])
+
+    def test_dsd_deriv_all_scaling(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        actual_dsd_deriv = state.dsd_deriv()
+        self.assertEqual(actual_dsd_deriv.shape, dsd_deriv.shape)
+        for i in range(nb):
+            self.assertAlmostEqual(actual_dsd_deriv[0,i], dsd_deriv[0,i])
+            self.assertAlmostEqual(actual_dsd_deriv[1,i], dsd_deriv[1,i])
+
+    def test_dsd_deriv_individual(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        actual_dsd_deriv = state.dsd_deriv('lambda')
+        self.assertEqual(len(actual_dsd_deriv), nb)
+        for i in range(nb):
+            self.assertAlmostEqual(actual_dsd_deriv[i], dsd_deriv[0,i])
+        actual_dsd_deriv = state.dsd_deriv('nu')
+        self.assertEqual(len(actual_dsd_deriv), nb)
+        for i in range(nb):
+            self.assertAlmostEqual(actual_dsd_deriv[i], dsd_deriv[1,i])
+
+    def test_dsd_deriv_individual_raises_if_not_found(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        with self.assertRaises(ValueError):
+            state.dsd_deriv('nonsense')
+
+    def test_dsd_deriv_scaling(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        actual_dsd_deriv = state.dsd_deriv('lambda')
+        self.assertEqual(len(actual_dsd_deriv), nb)
+        for i in range(nb):
+            self.assertAlmostEqual(actual_dsd_deriv[i], dsd_deriv[0,i])
+        actual_dsd_deriv = state.dsd_deriv('nu')
+        self.assertEqual(len(actual_dsd_deriv), nb)
+        for i in range(nb):
+            self.assertAlmostEqual(actual_dsd_deriv[i], dsd_deriv[1,i])
+
+    def test_fallout_deriv_all(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800.])
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        state = ModelState(desc, raw)
+        actual_fallout_deriv = state.fallout_deriv()
+        self.assertEqual(len(actual_fallout_deriv), 2)
+        for i in range(2):
+            self.assertAlmostEqual(actual_fallout_deriv[i],
+                                   fallout_deriv[i])
+
+    def test_fallout_deriv_all_scaling(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800.])
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        state = ModelState(desc, raw)
+        actual_fallout_deriv = state.fallout_deriv()
+        self.assertEqual(len(actual_fallout_deriv), 2)
+        for i in range(2):
+            self.assertAlmostEqual(actual_fallout_deriv[i],
+                                   fallout_deriv[i])
+
+    def test_fallout_deriv_individual(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800.])
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        state = ModelState(desc, raw)
+        actual_fallout_deriv = state.fallout_deriv('lambda')
+        self.assertAlmostEqual(actual_fallout_deriv[0], fallout_deriv[0])
+        actual_fallout_deriv = state.fallout_deriv('nu')
+        self.assertAlmostEqual(actual_fallout_deriv[1], fallout_deriv[1])
+
+    def test_fallout_deriv_individual_scaling(self):
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        fallout_deriv = np.array([700., 800.])
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        state = ModelState(desc, raw)
+        actual_fallout_deriv = state.fallout_deriv('lambda')
+        self.assertAlmostEqual(actual_fallout_deriv[0], fallout_deriv[0])
+        actual_fallout_deriv = state.fallout_deriv('nu')
+        self.assertAlmostEqual(actual_fallout_deriv[1], fallout_deriv[1])
+
+    def test_time_derivative_raw(self):
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.time_derivative_raw([ktens])
+        expected = ktens.calc_rate(dsd_raw, out_flux=True)
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertAlmostEqual(actual[i], expected[i], places=10)
+
+    def test_time_derivative_raw_two_kernels(self):
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.time_derivative_raw([ktens, ktens])
+        expected = 2. * ktens.calc_rate(dsd_raw, out_flux=True)
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertAlmostEqual(actual[i], expected[i], places=10)
+
+    def test_time_derivative_raw_no_kernels(self):
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        state = ModelState(desc, raw)
+        actual = state.time_derivative_raw([])
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertEqual(actual[i], 0.)
+
+    def test_time_derivative_raw_with_derivs(self):
+        grid = self.grid
+        nb = grid.num_bins
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
+                                  dsd_deriv[1,-4:].mean()])
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.time_derivative_raw([ktens])
+        expected = np.zeros((3*nb+3,))
+        expected[:nb+1], derivative = ktens.calc_rate(dsd_raw, derivative=True,
+                                                      out_flux=True)
+        deriv_plus_fallout = np.zeros((nb+1,))
+        for i in range(2):
+            deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
+                / desc.dsd_scale
+            deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
+                / desc.dsd_scale
+            expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
+                derivative @ deriv_plus_fallout
+        self.assertEqual(len(actual), 3*nb+3)
+        for i in range(3*nb+3):
+            self.assertAlmostEqual(actual[i], expected[i], places=10)
+
+
+class TestRK45Integrator(unittest.TestCase):
+    """
+    Test RK45Integrator methods and attributes.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3,
+                                        time_scale=400.)
+        nb = 90
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=nb)
+        self.kernel = LongKernel(self.constants)
+        self.ktens = KernelTensor(self.kernel, self.grid)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        self.desc = ModelStateDescriptor(self.constants,
+                                         self.grid,
+                                         dsd_deriv_names=dsd_deriv_names,
+                                         dsd_deriv_scales=dsd_deriv_scales)
+        nu = 5.
+        lam = nu / 1.e-4
+        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        self.state = ModelState(self.desc, self.raw)
+
+    def test_integrate_raw(self):
+        tscale = self.constants.time_scale
+        dt = 1.e-5
+        num_step = 3
+        integrator = RK45Integrator(self.constants, dt)
+        times, actual = integrator.integrate_raw(num_step*dt / tscale,
+                                                 self.state,
+                                                 [self.ktens])
+        expected = np.linspace(0., num_step*dt, num_step+1) / tscale
+        self.assertEqual(times.shape, (num_step+1,))
+        for i in range(num_step):
+            self.assertAlmostEqual(times[i], expected[i])
+        self.assertEqual(actual.shape, (num_step+1, len(self.raw)))
+        expected = np.zeros((num_step+1, len(self.raw)))
+        dt_scaled = dt / tscale
+        expected[0,:] = self.raw
+        for i in range(num_step):
+            expect_state = ModelState(self.desc, expected[i,:])
+            expected[i+1,:] = expected[i,:] \
+                + dt_scaled*expect_state.time_derivative_raw([self.ktens])
+        scale = expected.max()
+        for i in range(num_step+1):
+            for j in range(len(self.raw)):
+                self.assertAlmostEqual(actual[i,j]/scale, expected[i,j]/scale)

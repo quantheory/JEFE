@@ -1,12 +1,5 @@
 """Types related to a simple single-moment 1D microphysics scheme.
 
-Classes:
-Kernel
-LongKernel
-MassGrid
-GeometricMassGrid
-KernelTensor
-
 Utility functions:
 add_logs
 sub_logs
@@ -15,10 +8,21 @@ lower_gamma_deriv
 gamma_dist_d
 gamma_dist_lam_deriv
 gamma_dist_nu_deriv
+
+Classes:
+Kernel
+LongKernel
+MassGrid
+GeometricMassGrid
+KernelTensor
+ModelStateDescriptor
+ModelState
+RK45Integrator
 """
 
 import numpy as np
 from scipy.special import spence, gamma, gammainc, digamma
+from scipy.integrate import solve_ivp
 
 def add_logs(x, y):
     """Returns log(exp(x)+exp(y))."""
@@ -43,9 +47,10 @@ def lower_gamma_deriv(s, x, atol=1.e-14, rtol=1.e-14):
     rtol (optional) - Relative error tolerance (defaults to 1.e-14).
 
     This function finds the derivative of the lower incomplete gamma function
-    with respect to its shape parameter, using the series representation given
-    by Sun and Qin (2017). It attempts to produce a result y such that the
-    error is approximately rtol*y + atol or less.
+    with respect to its shape parameter. This is done with a series if x is
+    small, and using Legendre's continued fraction when x is large. It attempts
+    to produce a result y such that the error is approximately rtol*y + atol or
+    less.
 
     This function is only valid for real x > 0 and real s. x and s may be
     numpy arrays of equal shape, or one may be an array and the other a scalar.
@@ -172,22 +177,39 @@ class ModelConstants:
                    internally to non-dimensionalize particle sizes.
     rain_d - Diameter (m) of threshold diameter defining the distinction
              between cloud and rain particles.
+    mass_conc_scale (optional) - Mass concentration scale used for
+                                 nondimensionalization.
+    time_scale (optional) - Time scale used for nondimensionalization.
 
     Attributes:
+    rho_water
+    rho_air
+    std_diameter
     std_mass - Mass in kg corresponding to a scaled mass of 1.
+    rain_d
+    rain_m - `rain_d` converted to scaled mass.
+    mass_conc_scale
+    time_scale
 
     Methods:
     diameter_to_scaled_mass - Convert diameter in meters to scaled mass.
     scaled_mass_to_diameter - Convert scaled mass to diameter in meters.
     """
 
-    def __init__(self, rho_water, rho_air, std_diameter, rain_d):
+    def __init__(self, rho_water, rho_air, std_diameter, rain_d,
+                 mass_conc_scale=None, time_scale=None):
+        if mass_conc_scale is None:
+            mass_conc_scale = 1.
+        if time_scale is None:
+            time_scale = 1.
         self.rho_water = rho_water
         self.rho_air = rho_air
         self.std_diameter = std_diameter
         self.std_mass = rho_water * np.pi/6. * std_diameter**3
         self.rain_d = rain_d
         self.rain_m = self.diameter_to_scaled_mass(rain_d)
+        self.mass_conc_scale = mass_conc_scale
+        self.time_scale = time_scale
 
     def diameter_to_scaled_mass(self, d):
         """Convert diameter in meters to non-dimensionalized particle size."""
@@ -433,12 +455,12 @@ class LongKernel(Kernel):
             kc_cgs = 9.44e9
         if kc_si is None:
             kc_si = kc_cgs
-        self.kc = kc_si * constants.rho_air * constants.std_mass**2
+        self.kc = kc_si * constants.std_mass**2
         if kr_cgs is None:
             kr_cgs = 5.78e3
         if kr_si is None:
             kr_si = kr_cgs * 1.e-3
-        self.kr = kr_si * constants.rho_air * constants.std_mass
+        self.kr = kr_si * constants.std_mass
         if rain_m is None:
             rain_m = constants.diameter_to_scaled_mass(1.e-4)
         self.log_rain_m = np.log(rain_m)
@@ -740,6 +762,65 @@ class MassGrid:
         max_num = nums.max()
         return idxs, nums, max_num
 
+    def moment_weight_vector(self, n, cloud_only=None, rain_only=None):
+        """Calculate weight vector corresponding to a moment of the DSD.
+
+        Arguments:
+        n - Moment to calculate (can be any real number).
+        cloud_only (optional) - Only count cloud-sized drops.
+        rain_only (optional) - Only count rain-sized drops.
+
+        The returned value is a vector such that
+            std_diameter**n * np.dot(weight_vector, dsd) / self.std_mass
+        is a moment of the DSD, or if the DSD is in dimensionless units,
+            np.dot(weight_vector, dsd)
+        is the dimensionless DSD.
+        """
+        if cloud_only is None:
+            cloud_only is False
+        if rain_only is None:
+            rain_only is False
+        assert not (cloud_only and rain_only), \
+            "moments cannot be both cloud-only and rain-only"
+        const = self.constants
+        nb = self.num_bins
+        bb = self.bin_bounds
+        bw = self.bin_widths
+        if cloud_only or rain_only:
+            log_thresh = np.log(const.rain_m)
+            thresh_idx = self.find_bin(log_thresh)
+            if 0 <= thresh_idx < nb:
+                thresh_frac = (log_thresh - bb[thresh_idx]) / bw[thresh_idx]
+            elif thresh_idx < 0:
+                thresh_idx = 0
+                thresh_frac = 0.
+            else:
+                thresh_idx = nb-1
+                thresh_frac = 1.
+        if n == 3:
+            weight_vector = bw.copy()
+            if cloud_only:
+                weight_vector[thresh_idx+1:] = 0.
+                weight_vector[thresh_idx] *= thresh_frac
+            elif rain_only:
+                weight_vector[:thresh_idx] = 0.
+                weight_vector[thresh_idx] *= 1. - thresh_frac
+        else:
+            exponent = n / 3. - 1.
+            weight_vector = np.exp(exponent * bb) / exponent
+            weight_vector = weight_vector[1:] - weight_vector[:-1]
+            if cloud_only:
+                weight_vector[thresh_idx+1:] = 0.
+                weight_vector[thresh_idx] = \
+                    np.exp(exponent * log_thresh) / exponent \
+                    - np.exp(exponent * bb[thresh_idx]) / exponent
+            elif rain_only:
+                weight_vector[:thresh_idx] = 0.
+                weight_vector[thresh_idx] = \
+                    np.exp(exponent * bb[thresh_idx+1]) / exponent \
+                    - np.exp(exponent * log_thresh) / exponent
+        return weight_vector
+
 
 class GeometricMassGrid(MassGrid):
     """
@@ -755,6 +836,7 @@ class GeometricMassGrid(MassGrid):
     """
 
     def __init__(self, constants, d_min, d_max, num_bins):
+        self.constants = constants
         self.d_min = d_min
         self.d_max = d_max
         self.num_bins = num_bins
@@ -776,8 +858,6 @@ class KernelTensor():
     Initialization arguments:
     kernel - A Kernel object representing the collision kernel.
     grid - A MassGrid object defining the bins.
-    scaling (optional) - If present, the kernel is divided by this scaling
-                         factor.
     boundary (optional) - Upper boundary condition. If 'open', then particles
                           that are created larger than the largest bin size
                           "fall out" of the box. If 'closed', these particles
@@ -791,12 +871,15 @@ class KernelTensor():
     data - Data corresponding to nonzero elements of the tensor kernel.
            This is represented by an array of shape:
                (num_bins, num_bins, max_num)
+
+    Methods:
+    calc_rate
     """
-    def __init__(self, kernel, grid, scaling=None, boundary=None):
+    def __init__(self, kernel, grid, boundary=None):
         self.grid = grid
-        if scaling is None:
-            scaling = 1.
-        self.scaling = scaling
+        self.const = grid.constants
+        self.scaling = self.const.std_mass \
+            / (self.const.mass_conc_scale * self.const.time_scale)
         if boundary is None:
             boundary = 'open'
         self.boundary = boundary
@@ -823,7 +906,7 @@ class KernelTensor():
                         top_bound = bb[zidx+1]
                     self.data[i,j,k] = kernel.integrate_over_bins(
                         bb[i], bb[i+1], bb[j], bb[j+1], bb[zidx], top_bound)
-        self.data /= scaling
+        self.data /= self.scaling
 
     def calc_rate(self, f, out_flux=None, derivative=False):
         """Calculate rate of change of f due to collision-coalescence.
@@ -831,6 +914,8 @@ class KernelTensor():
         Arguments:
         f - Representation of DSD on this grid.
         out_flux (optional) - Whether to force output of mass leaving the box.
+        derivative (optional) - Whether to return the Jacobian of the rate
+                                calculation as well.
 
         ``f'' must be an array of total size num_bins or num_bins+1, either a
         1-D array, a row vector, or column vector. If of size num_bins+1, the
@@ -846,6 +931,12 @@ class KernelTensor():
         If out_flux is specified and True, then the output is the same as if f
         had been of shape (nb+1,), and if it is False, then the output is the
         same as if f was of shape (nb,).
+
+        If derivative is True, the return value is a tuple, where the first
+        element is the output described above, and the second element is a
+        square matrix with the same size (on each size) as the first output.
+        This matrix contains the Jacobian of this output with respect to the
+        DSD (+ fallout if included in the output).
         """
         nb = self.grid.num_bins
         f_len = len(f.flat)
@@ -887,3 +978,402 @@ class KernelTensor():
             return output, rate_deriv
         else:
             return output
+
+
+class ModelStateDescriptor:
+    """
+    Describe the state variables contained in a ModelState.
+
+    Initialization arguments:
+    constants - A ModelConstants object.
+    mass_grid - A MassGrid object defining the bins.
+    fallout (optional) - Whether to include a variable for mass that has fallen
+                         out of the model box. Defaults to True.
+    dsd_deriv_names (optional) - List of strings naming variables with respect
+                                 to which DSD derivatives are prognosed.
+    dsd_deriv_scales (optional) - List of scales for the derivatives of the
+                                  named variable. These scales will be applied
+                                  in addition to dsd_scale. They default to 1.
+
+    Attributes:
+    constants - ModelConstants object used by this model.
+    mass_grid - The grid of the DSD used by this model.
+    dsd_scale - Factor used internally to scale the DSD.
+    dsd_deriv_num - Number of variables with respect to which the derivative of
+                    the DSD is tracked.
+    dsd_deriv_names - Names of variables with tracked derivatives.
+    dsd_deriv_scales - Scales of variables with tracked derivatives.
+                       These scales are applied on top of the dsd_scale.
+
+    Methods:
+    state_len
+    construct_raw
+    dsd_loc
+    fallout_loc
+    dsd_deriv_loc
+    fallout_deriv_loc
+    dsd_raw
+    fallout_raw
+    dsd_deriv_raw
+    fallout_deriv_raw
+    """
+    def __init__(self, constants, mass_grid, dsd_scale=None,
+                 dsd_deriv_names=None, dsd_deriv_scales=None):
+        self.constants = constants
+        self.mass_grid = mass_grid
+        self.dsd_scale = constants.mass_conc_scale
+        if dsd_deriv_names is not None:
+            self.dsd_deriv_num = len(dsd_deriv_names)
+            assert len(set(dsd_deriv_names)) == self.dsd_deriv_num, \
+                "duplicate derivatives found in list"
+            self.dsd_deriv_names = dsd_deriv_names
+            if dsd_deriv_scales is None:
+                dsd_deriv_scales = np.ones((self.dsd_deriv_num,))
+            assert len(dsd_deriv_scales) == self.dsd_deriv_num, \
+                "dsd_deriv_scales length does not match dsd_deriv_names"
+            self.dsd_deriv_scales = dsd_deriv_scales
+        else:
+            assert dsd_deriv_scales is None, \
+                "cannot specify dsd_deriv_scales without dsd_deriv_names"
+            self.dsd_deriv_num = 0
+            self.dsd_deriv_names = []
+            self.dsd_deriv_scales = np.zeros((0,))
+
+    def state_len(self):
+        """Return the length of the state vector."""
+        idx, num = self.dsd_deriv_loc(with_fallout=True)
+        return idx[-1] + num
+
+    def construct_raw(self, dsd, fallout=None, dsd_deriv=None,
+                      fallout_deriv=None):
+        """Construct raw state vector from individual variables.
+
+        Arguments:
+        dsd - Drop size distribution.
+        fallout (optional) - Amount of third moment that has fallen out of the
+                             model. If not specified, defaults to zero.
+        dsd_deriv - DSD derivatives. Mandatory if dsd_deriv_num is not zero.
+        fallout_deriv - Fallout derivatives. If not specified, default to zero.
+
+        Returns a 1-D array of size given by state_len().
+        """
+        raw = np.zeros((self.state_len(),))
+        nb = self.mass_grid.num_bins
+        ddn = self.dsd_deriv_num
+        assert len(dsd) == nb, "dsd of wrong size for this descriptor's grid"
+        idx, num = self.dsd_loc()
+        raw[idx:idx+num] = dsd / self.dsd_scale
+        if fallout is None:
+            fallout = 0.
+        raw[self.fallout_loc()] = fallout / self.dsd_scale
+        if self.dsd_deriv_num > 0:
+            assert dsd_deriv is not None, \
+                "dsd_deriv input is required, but missing"
+            assert (dsd_deriv.shape == (ddn, nb)), \
+                "dsd_deriv input is the wrong shape"
+            if fallout_deriv is None:
+                fallout_deriv = np.zeros((ddn,))
+            assert len(fallout_deriv) == ddn, \
+                "fallout_deriv input is wrong length"
+            for i in range(ddn):
+                idx, num = self.dsd_deriv_loc(self.dsd_deriv_names[i])
+                raw[idx:idx+num] = dsd_deriv[i,:] / self.dsd_deriv_scales[i] \
+                                    / self.dsd_scale
+                idx = self.fallout_deriv_loc(self.dsd_deriv_names[i])
+                raw[idx] = fallout_deriv[i] / self.dsd_deriv_scales[i] \
+                                    / self.dsd_scale
+        else:
+            assert dsd_deriv is None or len(dsd_deriv.flat) == 0, \
+                "no dsd derivatives should be specified for this descriptor"
+            assert fallout_deriv is None or len(fallout_deriv) == 0, \
+                "no fallout derivatives should be specified " \
+                "for this descriptor"
+        return raw
+
+    def dsd_loc(self, with_fallout=None):
+        """Return location of the DSD data in the state vector.
+
+        Arguments:
+        with_fallout (optional) - Include fallout at the end of DSD data.
+                                  Defaults to False.
+
+        Returns a tuple (idx, num), where idx is the location of the first DSD
+        entry and num is the number of entries.
+        """
+        if with_fallout is None:
+            with_fallout = False
+        add = 1 if with_fallout else 0
+        return (0, self.mass_grid.num_bins + add)
+
+    def fallout_loc(self):
+        """Return index of fallout scalar in the state vector."""
+        idx, num = self.dsd_loc()
+        return idx + num
+
+    def dsd_deriv_loc(self, var_name=None, with_fallout=None):
+        """Return location of DSD derivative data in the state vector.
+
+        Arguments:
+        var_name (optional) - Return information for derivative with respect to
+                              the variable named by this string.
+        with_fallout (optional) - Include fallout derivative at the end of DSD
+                                  derivative data. Defaults to False.
+
+        If var_name is not provided, information for all derivatives is
+        returned. If var_name is provided, information for just that derivative
+        is returned.
+        """
+        if with_fallout is None:
+            with_fallout = False
+        nb = self.mass_grid.num_bins
+        ddn = self.dsd_deriv_num
+        st_idx, st_num = self.dsd_loc(with_fallout=True)
+        start = st_idx + st_num
+        num = nb+1 if with_fallout else nb
+        if ddn == 0:
+            return [start], 0
+        if var_name is None:
+            return [start + i*(nb+1) for i in range(ddn)], num
+        else:
+            idx = self.dsd_deriv_names.index(var_name)
+            return start + idx*(nb+1), num
+
+    def fallout_deriv_loc(self, var_name=None):
+        """Return location of fallout derivative data in the state vector.
+
+        Arguments:
+        var_name (optional) - Return information for derivative with respect to
+                              the variable named by this string.
+
+        If var_name is not provided, information for all derivatives is
+        returned. If var_name is provided, information for just that derivative
+        is returned.
+        """
+        idx, num = self.dsd_deriv_loc(var_name, with_fallout=False)
+        if var_name is None:
+            return [i+num for i in idx]
+        else:
+            return idx+num
+
+    def dsd_raw(self, raw, with_fallout=None):
+        """Return raw DSD data from the state vector.
+
+        Arguments:
+        raw - Raw state vector.
+        with_fallout (optional) - Include fallout at the end of DSD data, if
+                                  present. Defaults to False.
+        """
+        idx, num = self.dsd_loc(with_fallout)
+        return raw[idx:idx+num]
+
+    def fallout_raw(self, raw):
+        """Return raw fallout data from the state vector."""
+        return raw[self.fallout_loc()]
+
+    def dsd_deriv_raw(self, raw, var_name=None, with_fallout=None):
+        """Return raw DSD derivative data from the state vector.
+
+        Arguments:
+        raw - Raw state vector.
+        var_name (optional) - Return information for derivative with respect to
+                              the variable named by this string.
+
+        If var_name is not provided, a 2D array of size
+        `(dsd_deriv_num, num_bins)` is returned, with all derivatives in it.
+        If var_name is provided, a 1D array of size num_bins is returned.
+        """
+        nb = self.mass_grid.num_bins
+        ddn = self.dsd_deriv_num
+        idx, num = self.dsd_deriv_loc(var_name, with_fallout)
+        if var_name is None:
+            output = np.zeros((ddn, num))
+            for i in range(ddn):
+                output[i,:] = raw[idx[i]:idx[i]+num]
+            return output
+        else:
+            return raw[idx:idx+num]
+
+    def fallout_deriv_raw(self, raw, var_name=None):
+        """Return raw fallout derivative data from the state vector.
+
+        Arguments:
+        var_name (optional) - Return information for derivative with respect to
+                              the variable named by this string.
+
+        If var_name is not provided, information for all derivatives is
+        returned. If var_name is provided, information for just that derivative
+        is returned.
+        """
+        ddn = self.dsd_deriv_num
+        idx = self.fallout_deriv_loc(var_name)
+        if var_name is None:
+            output = np.zeros((ddn,))
+            for i in range(ddn):
+                output[i] = raw[idx[i]]
+            return output
+        else:
+            return raw[idx]
+
+
+class ModelState:
+    """
+    Describe a state of the model at a moment in time.
+
+    Initialization arguments:
+    desc - The ModelStateDescriptor object corresponding to this object.
+    dsd - A 1-D vector representing the mass-weighted drop size distribution.
+          This should define the amount of 3rd moment with respect to diameter
+          in each bin, using units consistent with the constants object.
+
+    Attributes:
+    constants - ModelConstants object used by this model.
+    mass_grid - The grid of the DSD used by this model.
+    desc - ModelStateDescriptor associated with this state.
+    raw - A single large vector used to handle the state (mainly for use in
+          time integration).
+
+    Methods:
+    dsd
+    dsd_moment
+    fallout
+    dsd_deriv
+    fallout_deriv
+    time_derivative_raw
+    """
+    def __init__(self, desc, raw):
+        self.constants = desc.constants
+        self.mass_grid = desc.mass_grid
+        self.desc = desc
+        self.raw = raw
+
+    def dsd(self):
+        """Droplet size distribution associated with this state.
+
+        The units are those of M3 for the distribution."""
+        return self.desc.dsd_raw(self.raw) * self.desc.dsd_scale
+
+    def dsd_moment(self, n, cloud_only=None, rain_only=None):
+        """Calculate a moment of the DSD.
+
+        Arguments:
+        n - Moment to calculate (can be any real number).
+        cloud_only (optional) - Only count cloud-sized drops.
+        rain_only (optional) - Only count rain-sized drops.
+        """
+        const = self.constants
+        grid = self.mass_grid
+        m3_dsd = self.dsd() / const.std_mass
+        weight_vector = grid.moment_weight_vector(n, cloud_only, rain_only)
+        return const.std_diameter**(n) * np.dot(weight_vector, m3_dsd)
+
+    def fallout(self):
+        """Return amount of third moment that has fallen out of the model."""
+        return self.desc.fallout_raw(self.raw) * self.desc.dsd_scale
+
+    def dsd_deriv(self, var_name=None):
+        """Return derivatives of the DSD with respect to different variables.
+
+        Arguments:
+        var_name (optional) - Return information for derivative with respect to
+                              the variable named by this string.
+
+        If var_name is not provided, a 2D array of size
+        `(dsd_deriv_num, num_bins)` is returned, with all derivatives in it.
+        If var_name is provided, a 1D array of size num_bins is returned.
+        """
+        dsd_deriv = self.desc.dsd_deriv_raw(self.raw, var_name)
+        if var_name is None:
+            for i in range(self.desc.dsd_deriv_num):
+                dsd_deriv[i,:] *= self.desc.dsd_deriv_scales[i]
+        else:
+            idx = self.desc.dsd_deriv_names.index(var_name)
+            dsd_deriv *= self.desc.dsd_deriv_scales[idx]
+        dsd_deriv *= self.desc.dsd_scale
+        return dsd_deriv
+
+    def fallout_deriv(self, var_name=None):
+        """Return derivative of fallout with respect to different variables.
+
+        Arguments:
+        var_name (optional) - Return information for derivative with respect to
+                              the variable named by this string.
+
+        If var_name is not provided, a 1D array of length dsd_deriv_num is
+        returned, with all derivatives in it. If var_name is provided, a
+        single scalar is returned for that derivative.
+        """
+        if var_name is None:
+            output = self.desc.fallout_deriv_raw(self.raw)
+            for i in range(self.desc.dsd_deriv_num):
+                output[i] *= self.desc.dsd_deriv_scales[i]
+            return output * self.desc.dsd_scale
+        else:
+            idx = self.desc.dsd_deriv_names.index(var_name)
+            return self.desc.fallout_deriv_raw(self.raw) \
+                * self.desc.dsd_scale * self.desc.dsd_deriv_scales[idx]
+
+    def time_derivative_raw(self, proc_tens):
+        """Time derivative of the state using the given process tensors.
+
+        Arguments:
+        proc_tens - List of process tensors, the rates of which sum to give the
+                    time derivative.
+        """
+        ddn = self.desc.dsd_deriv_num
+        dfdt = np.zeros((len(self.raw),))
+        dsd_raw = self.desc.dsd_raw(self.raw)
+        dsd_deriv_raw = self.desc.dsd_deriv_raw(self.raw, with_fallout=True)
+        didx, dnum = self.desc.dsd_loc(with_fallout=True)
+        dridxs, drnum = self.desc.dsd_deriv_loc(with_fallout=True)
+        for pt in proc_tens:
+            if ddn > 0:
+                rate, derivative = pt.calc_rate(dsd_raw, out_flux=True,
+                                                derivative=True)
+                dfdt[didx:didx+dnum] += rate
+                for i in range(ddn):
+                    dfdt[dridxs[i]:dridxs[i]+drnum] += \
+                        derivative @ dsd_deriv_raw[i,:]
+            else:
+                dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
+        return dfdt
+
+class RK45Integrator:
+    """
+    Integrate a model state in time using the SciPy RK45 implementation.
+
+    Initialization arguments:
+    dt - Max time step at which to calculate the results.
+
+    Methods:
+    integrate_raw
+    """
+    def __init__(self, constants, dt):
+        self.constants = constants
+        self.dt = dt / constants.time_scale
+
+    def integrate_raw(self, t_len, state, proc_tens):
+        """Integrate the state and return raw state data.
+
+        Arguments:
+        t_len - Length of time to integrate over (nondimensionalized units).
+        state - Initial state.
+        proc_tens - List of process tensors to calculate state process rates
+                    each time step.
+
+        Returns a tuple `(times, raws)`, where times is an array of times at
+        which the output is provided, and raws is an array for which each row
+        is the raw state vector at a different time.
+        """
+        dt = self.dt
+        tol = dt * 1.e-10
+        num_step = int(t_len / dt)
+        if t_len - (num_step * dt) > tol:
+            num_step = num_step + 1
+        times = np.linspace(0., t_len, num_step+1)
+        raw_len = len(state.raw)
+        rate_fun = lambda t, raw: \
+            ModelState(state.desc,raw).time_derivative_raw(proc_tens)
+        solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
+                             method='RK45', t_eval=times, max_step=self.dt)
+        output = np.transpose(solbunch.y)
+        return times, output
