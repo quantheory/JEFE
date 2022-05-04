@@ -2663,6 +2663,59 @@ class TestModelState(unittest.TestCase):
         actual_fallout_deriv = state.fallout_deriv('nu')
         self.assertAlmostEqual(actual_fallout_deriv[1], fallout_deriv[1])
 
+    def test_dsd_time_deriv_raw(self):
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.dsd_time_deriv_raw([ktens])
+        expected = ktens.calc_rate(dsd_raw, out_flux=True)
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertAlmostEqual(actual[i], expected[i], places=10)
+
+    def test_dsd_time_deriv_raw_two_kernels(self):
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.dsd_time_deriv_raw([ktens, ktens])
+        expected = 2.*ktens.calc_rate(dsd_raw, out_flux=True)
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertAlmostEqual(actual[i], expected[i], places=10)
+
+    def test_dsd_time_deriv_raw_no_kernels(self):
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.dsd_time_deriv_raw([])
+        self.assertEqual(len(actual), nb+1)
+        for i in range(nb+1):
+            self.assertAlmostEqual(actual[i], 0., places=10)
+
     def test_time_derivative_raw(self):
         grid = self.grid
         nb = grid.num_bins
@@ -2676,7 +2729,7 @@ class TestModelState(unittest.TestCase):
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
         actual = state.time_derivative_raw([ktens])
-        expected = ktens.calc_rate(dsd_raw, out_flux=True)
+        expected = state.dsd_time_deriv_raw([ktens])
         self.assertEqual(len(actual), nb+1)
         for i in range(nb+1):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
@@ -2752,6 +2805,100 @@ class TestModelState(unittest.TestCase):
         for i in range(3*nb+3):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
 
+    def test_linear_func_raw(self):
+        const = self.constants
+        weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
+        state = ModelState(self.desc, self.raw)
+        actual = state.linear_func_raw(weight_vector)
+        expected = state.dsd_moment(3, cloud_only=True)
+        expected *= const.std_mass \
+            / (const.std_diameter**3 * state.desc.dsd_scale)
+        self.assertAlmostEqual(actual / expected, 1.)
+
+    def test_linear_func_raw_with_derivative(self):
+        const = self.constants
+        weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        actual, actual_deriv = state.linear_func_raw(weight_vector,
+                                                     derivative=True)
+        expected = state.dsd_moment(3, cloud_only=True)
+        expected *= const.std_mass \
+            / (const.std_diameter**3 * state.desc.dsd_scale)
+        self.assertAlmostEqual(actual / expected, 1.)
+        self.assertEqual(actual_deriv.shape, (2,))
+        dsd_deriv_raw = desc.dsd_deriv_raw(state.raw)
+        for i in range(2):
+            expected = np.dot(dsd_deriv_raw[i], weight_vector)
+            self.assertAlmostEqual(actual_deriv[i] / expected, 1.)
+
+    def test_linear_func_raw_with_time_derivative(self):
+        const = self.constants
+        weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
+        nb = self.grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        state = ModelState(desc, raw)
+        dfdt = dsd * 0.1
+        actual, actual_deriv = state.linear_func_raw(weight_vector,
+                                                     derivative=True,
+                                                     dfdt=dfdt)
+        expected = state.dsd_moment(3, cloud_only=True)
+        expected *= const.std_mass \
+            / (const.std_diameter**3 * state.desc.dsd_scale)
+        self.assertAlmostEqual(actual / expected, 1.)
+        self.assertEqual(actual_deriv.shape, (3,))
+        dsd_deriv_raw = np.zeros((3, nb))
+        dsd_deriv_raw[0,:] = dfdt
+        dsd_deriv_raw[1:,:] = desc.dsd_deriv_raw(state.raw)
+        for i in range(3):
+            expected = np.dot(dsd_deriv_raw[i], weight_vector)
+            self.assertAlmostEqual(actual_deriv[i] / expected, 1.)
+
+    def test_linear_func_rate_raw(self):
+        state = ModelState(self.desc, self.raw)
+        dsd = self.dsd
+        dfdt = dsd * 0.1
+        weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
+        actual = state.linear_func_rate_raw(weight_vector, dfdt)
+        expected = np.dot(weight_vector, dfdt)
+        self.assertAlmostEqual(actual / expected, 1.)
+
+    def test_linear_func_rate_derivative(self):
+        nb = self.grid.num_bins
+        state = ModelState(self.desc, self.raw)
+        dsd = self.dsd
+        dfdt_deriv = np.zeros((2, nb))
+        dfdt_deriv[0,:] = dsd + 1.
+        dfdt_deriv[1,:] = dsd + 2.
+        dfdt = dsd * 0.1
+        weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
+        actual, actual_deriv = \
+            state.linear_func_rate_raw(weight_vector, dfdt,
+                                       dfdt_deriv=dfdt_deriv)
+        expected = np.dot(weight_vector, dfdt)
+        self.assertAlmostEqual(actual / expected, 1.)
+        self.assertEqual(actual_deriv.shape, (2,))
+        expected_deriv = dfdt_deriv @ weight_vector
+        for i in range(2):
+            self.assertAlmostEqual(actual_deriv[i] / expected_deriv[i], 1.)
+
 
 class TestRK45Integrator(unittest.TestCase):
     """
@@ -2764,7 +2911,7 @@ class TestRK45Integrator(unittest.TestCase):
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
-        nb = 90
+        nb = 30
         self.grid = GeometricMassGrid(self.constants,
                                       d_min=1.e-6,
                                       d_max=1.e-3,
@@ -2789,7 +2936,7 @@ class TestRK45Integrator(unittest.TestCase):
     def test_integrate_raw(self):
         tscale = self.constants.time_scale
         dt = 1.e-5
-        num_step = 3
+        num_step = 2
         integrator = RK45Integrator(self.constants, dt)
         times, actual = integrator.integrate_raw(num_step*dt / tscale,
                                                  self.state,
@@ -2810,3 +2957,32 @@ class TestRK45Integrator(unittest.TestCase):
         for i in range(num_step+1):
             for j in range(len(self.raw)):
                 self.assertAlmostEqual(actual[i,j]/scale, expected[i,j]/scale)
+
+    def test_integrate(self):
+        nb = self.grid.num_bins
+        dt = 1.e-5
+        num_step = 2
+        integrator = RK45Integrator(self.constants, dt)
+        times, states = integrator.integrate(num_step*dt,
+                                             self.state,
+                                             [self.ktens])
+        expected = np.linspace(0., num_step*dt, num_step+1)
+        self.assertEqual(times.shape, (num_step+1,))
+        for i in range(num_step):
+            self.assertAlmostEqual(times[i], expected[i])
+        self.assertEqual(len(states), num_step+1)
+        expected = np.zeros((num_step+1, len(self.raw)))
+        dt_scaled = dt / self.constants.time_scale
+        expected[0,:] = self.raw
+        for i in range(num_step):
+            expect_state = ModelState(self.desc, expected[i,:])
+            expected[i+1,:] = expected[i,:] \
+                + dt_scaled*expect_state.time_derivative_raw([self.ktens])
+        for i in range(num_step+1):
+            actual_dsd = states[i].dsd()
+            expected_dsd = expected[i,:nb] * self.desc.dsd_scale
+            self.assertEqual(actual_dsd.shape, expected_dsd.shape)
+            scale = expected_dsd.max()
+            for j in range(nb):
+                self.assertAlmostEqual(actual_dsd[j]/scale,
+                                       expected_dsd[j]/scale)

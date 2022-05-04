@@ -1238,7 +1238,10 @@ class ModelState:
     fallout
     dsd_deriv
     fallout_deriv
+    dsd_time_deriv_raw
     time_derivative_raw
+    linear_func_raw
+    linear_func_rate_raw
     """
     def __init__(self, desc, raw):
         self.constants = desc.constants
@@ -1312,6 +1315,19 @@ class ModelState:
             return self.desc.fallout_deriv_raw(self.raw) \
                 * self.desc.dsd_scale * self.desc.dsd_deriv_scales[idx]
 
+    def dsd_time_deriv_raw(self, proc_tens):
+        """Time derivative of the raw dsd using the given process tensors.
+
+        Arguments:
+        proc_tens - List of process tensors, the rates of which sum to give the
+                    time derivative.
+        """
+        dsd_raw = self.desc.dsd_raw(self.raw, with_fallout=True)
+        dfdt = np.zeros(dsd_raw.shape)
+        for pt in proc_tens:
+            dfdt += pt.calc_rate(dsd_raw, out_flux=True)
+        return dfdt
+
     def time_derivative_raw(self, proc_tens):
         """Time derivative of the state using the given process tensors.
 
@@ -1337,6 +1353,72 @@ class ModelState:
                 dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
         return dfdt
 
+    def linear_func_raw(self, weight_vector, derivative=None, dfdt=None):
+        """Calculate a linear functional of the DSD (nondimensionalized units).
+
+        Arguments:
+        weight_vector - Weighting function defining the integral over the DSD.
+                        (E.g. obtained from `MassGrid.moment_weight_vector`.)
+        derivative (optional) - If True, return derivative information as well.
+                                Defaults to False.
+        dfdt (optional) - The raw derivative of the DSD with respect to time.
+                          If included and derivative is True, the time
+                          derivative of the functional will be prepended to the
+                          derivative output.
+
+        If derivative is False, this returns a scalar representing the
+        nondimensional moment or other linear functional requested. If
+        derivative is True, returns a tuple where the first element is the
+        requested functional and the second element is the gradient of the
+        functional with to the variables listed in self.desc.
+
+        If dfdt is specified and derivative is True, the 0-th element of the
+        gradient will be the derivative with respect to time.
+        """
+        if derivative is None:
+            derivative = False
+        dsd_raw = self.desc.dsd_raw(self.raw)
+        nb = self.mass_grid.num_bins
+        if derivative:
+            ddn = self.desc.dsd_deriv_num
+            offset = 1 if dfdt is not None else 0
+            dsd_deriv_raw = np.zeros((ddn+offset, nb))
+            if dfdt is not None:
+                dsd_deriv_raw[0,:] = dfdt
+            dsd_deriv_raw[offset:,:] = self.desc.dsd_deriv_raw(self.raw)
+            grad = dsd_deriv_raw @ weight_vector
+            return np.dot(dsd_raw, weight_vector), grad
+        else:
+            return np.dot(dsd_raw, weight_vector)
+
+    def linear_func_rate_raw(self, weight_vector, dfdt, dfdt_deriv=None):
+        """Calculate rate of change of a linear functional of the DSD.
+
+        Arguments:
+        weight_vector - Weighting function defining the integral over the DSD.
+                        (E.g. obtained from `MassGrid.moment_weight_vector`.)
+        dfdt - The raw derivative of the DSD with respect to time.
+        dfdt_deriv (optional) - If not None, return derivative information as
+                                well. Defaults to None.
+
+        If dfdt_deriv is None, this returns a scalar representing the time
+        derivative of the nondimensional moment or other linear functional
+        requested. If dfdt_deriv contains DSD derivative information, returns a
+        tuple where the first element is the requested time derivative and the
+        second element is the gradient of the derivative with respect to the
+        variables for which the DSD derivative is provided.
+
+        If dfdt_deriv is not None, it should be an array of shape
+            (ddn, num_bins)
+        where ddn is the number of derivatives that will be returned in the
+        second argument.
+        """
+        if dfdt_deriv is None:
+            return np.dot(dfdt, weight_vector)
+        else:
+            return np.dot(dfdt, weight_vector), dfdt_deriv @ weight_vector
+
+
 class RK45Integrator:
     """
     Integrate a model state in time using the SciPy RK45 implementation.
@@ -1346,6 +1428,7 @@ class RK45Integrator:
 
     Methods:
     integrate_raw
+    integrate
     """
     def __init__(self, constants, dt):
         self.constants = constants
@@ -1377,3 +1460,12 @@ class RK45Integrator:
                              method='RK45', t_eval=times, max_step=self.dt)
         output = np.transpose(solbunch.y)
         return times, output
+
+    def integrate(self, t_len, state, proc_tens):
+        tscale = self.constants.time_scale
+        desc = state.desc
+        times, raws = self.integrate_raw(t_len / tscale, state, proc_tens)
+        states = []
+        for i in range(len(times)):
+            states.append(ModelState(desc,raws[i,:]))
+        return times * tscale, states
