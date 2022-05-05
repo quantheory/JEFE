@@ -2274,6 +2274,303 @@ class TestModelStateDescriptor(unittest.TestCase):
                                    fallout_deriv[i] / dsd_deriv_scales[i]
                                       / dsd_scale)
 
+    def test_perturbation_covariance(self):
+        const = ModelConstants(rho_water=1000.,
+                               rho_air=1.2,
+                               std_diameter=1.e-4,
+                               rain_d=1.e-4,
+                               mass_conc_scale=1.e-3,
+                               time_scale=400.)
+        grid = GeometricMassGrid(const,
+                                 d_min=1.e-6,
+                                 d_max=1.e-3,
+                                 num_bins=90)
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        self.assertEqual(desc.perturb_num, nvar)
+        self.assertEqual(desc.state_len(), 3*nb + 3 + nvar*nvar)
+        self.assertEqual(desc.perturb_wvs.shape, (nvar, nb))
+        for i in range(nvar):
+            for j in range(nb):
+                self.assertEqual(desc.perturb_wvs[i,j],
+                                 perturbed_variables[i][0][j])
+        self.assertEqual(desc.perturb_scales.shape, (nvar,))
+        for i in range(nvar):
+            self.assertEqual(desc.perturb_scales[i], perturbed_variables[i][2])
+        self.assertEqual(desc.perturbation_rate.shape, (nvar, nvar))
+        for i in range(nvar):
+            for j in range(nvar):
+                self.assertAlmostEqual(desc.perturbation_rate[i,j],
+                                         perturbation_rate[i,j] \
+                                             / perturbed_variables[i][2] \
+                                             / perturbed_variables[j][2] \
+                                             * const.time_scale)
+
+    def test_perturbation_covariance_raises_for_mismatched_sizes(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+        ]
+        perturbation_rate = np.eye(3)
+        with self.assertRaises(AssertionError):
+            desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+
+    def test_perturbation_covariance_raises_for_rate_without_variable(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        perturbation_rate = np.eye(3)
+        with self.assertRaises(AssertionError):
+            desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbation_rate=perturbation_rate)
+
+    def test_perturbation_covariance_allows_variables_without_rate(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+        ]
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables)
+        self.assertEqual(desc.perturbation_rate.shape, (2, 2))
+        for i in range(2):
+            for j in range(2):
+                self.assertEqual(desc.perturbation_rate[i,j], 0.)
+
+    def test_perturb_cov_loc(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        self.assertEqual(desc.perturb_cov_loc(), (3*nb+3, nvar**2))
+
+    def test_perturb_cov_raw(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        sl = desc.state_len()
+        raw = np.zeros((sl,))
+        raw[-nvar*nvar:] = np.linspace(1, nvar*nvar, nvar*nvar)
+        actual = desc.perturb_cov_raw(raw)
+        expected = np.reshape(np.linspace(1, nvar*nvar, nvar*nvar),
+                              (nvar, nvar))
+        self.assertEqual(actual.shape, expected.shape)
+        for i in range(nvar):
+            for j in range(nvar):
+                self.assertEqual(actual[i,j],
+                                 expected[i,j])
+
+    def test_perturb_cov_construct_raw(self):
+        const = ModelConstants(rho_water=1000.,
+                               rho_air=1.2,
+                               std_diameter=1.e-4,
+                               rain_d=1.e-4,
+                               mass_conc_scale=1.e-3,
+                               time_scale=400.)
+        grid = GeometricMassGrid(const,
+                                 d_min=1.e-6,
+                                 d_max=1.e-3,
+                                 num_bins=90)
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        dsd = np.linspace(0, nb, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        orig = np.reshape(np.linspace(1, nvar*nvar, nvar*nvar),
+                          (nvar, nvar))
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 perturb_cov=orig)
+        self.assertEqual(len(raw), desc.state_len())
+        actual = desc.perturb_cov_raw(raw)
+        self.assertEqual(actual.shape, orig.shape)
+        for i in range(nvar):
+            for j in range(nvar):
+                expected = orig[i,j] \
+                    / perturbed_variables[i][2] \
+                    / perturbed_variables[j][2]
+                self.assertAlmostEqual(actual[i,j],
+                                       expected)
+
+    def test_perturb_cov_construct_raw_raises_if_perturb_unexpected(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        nvar = 3
+        desc = ModelStateDescriptor(const, grid)
+        dsd = np.linspace(0, nb, nb)
+        orig = np.reshape(np.linspace(1, nvar*nvar, nvar*nvar),
+                          (nvar, nvar))
+        with self.assertRaises(AssertionError):
+            raw = desc.construct_raw(dsd, perturb_cov=orig)
+
+    def test_perturb_cov_construct_raw_raises_if_perturb_is_wrong_size(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        dsd = np.linspace(0, nb, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        orig = np.zeros((2, 2))
+        with self.assertRaises(AssertionError):
+            raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                     perturb_cov=orig)
+
+    def test_perturb_cov_construct_raw_defaults_to_zero_cov(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        dsd = np.linspace(0, nb, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        self.assertEqual(len(raw), desc.state_len())
+        actual = desc.perturb_cov_raw(raw)
+        self.assertEqual(actual.shape, (nvar, nvar))
+        for i in range(nvar):
+            for j in range(nvar):
+                self.assertEqual(actual[i,j], 0.)
+
 
 class TestModelState(unittest.TestCase):
     """
@@ -2994,6 +3291,121 @@ class TestModelState(unittest.TestCase):
         accr_deriv[1:] *= desc.dsd_deriv_scales
         for i in range(3):
             self.assertAlmostEqual(actual_deriv[1,i] / accr_deriv[i], 1.)
+
+    def test_perturb_cov(self):
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        dsd = np.linspace(0., nb-1, nb)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = dsd + 1.
+        dsd_deriv[1,:] = dsd + 2.
+        expected = np.eye(nvar)
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 perturb_cov=expected)
+        state = ModelState(desc, raw)
+        actual = state.perturb_cov()
+        self.assertEqual(actual.shape, expected.shape)
+        for i in range(nvar):
+            for j in range(nvar):
+                self.assertAlmostEqual(actual[i,j], expected[i,j])
+                self.assertEqual(actual[i,j], actual[j,i])
+
+    def test_time_derivative_raw_with_perturb_cov(self):
+        grid = self.grid
+        nb = grid.num_bins
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), scale),
+            (wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
+                                  dsd_deriv[1,-4:].mean()])
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        actual = state.time_derivative_raw([ktens])
+        expected = np.zeros((3*nb+3+nvar**2,))
+        expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
+                                                      out_flux=True)
+        deriv_plus_fallout = np.zeros((nb+1,))
+        for i in range(2):
+            deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
+                / desc.dsd_scale
+            deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
+                / desc.dsd_scale
+            expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
+                rate_deriv @ deriv_plus_fallout
+        dfdt = expected[:nb]
+        dsd_deriv_raw = np.zeros((3, nb))
+        dsd_deriv_raw[0,:] = dfdt
+        dsd_deriv_raw[1:,:] = desc.dsd_deriv_raw(state.raw)
+        dfdt_deriv = dsd_deriv_raw @ rate_deriv[:nb,:nb].T
+        perturb_cov_raw = desc.perturb_cov_raw(state.raw)
+        moms = np.zeros((nvar,))
+        mom_jac = np.zeros((nvar, 3))
+        mom_rates = np.zeros((nvar,))
+        mom_rate_jac = np.zeros((nvar, 3))
+        for i in range(nvar):
+            wv = perturbed_variables[i][0]
+            moms[i], mom_jac[i,:] = state.linear_func_raw(wv, derivative=True,
+                                                          dfdt=dfdt)
+            mom_rates[i], mom_rate_jac[i,:] = \
+                state.linear_func_rate_raw(wv, dfdt,
+                                           dfdt_deriv=dfdt_deriv)
+        transform = np.diag(LogTransform().derivative(moms))
+        jacobian = la.inv(transform @ mom_jac)
+        jacobian = transform @ mom_rate_jac @ jacobian
+        sof_deriv = LogTransform().second_over_first_derivative(moms)
+        jacobian += np.diag(mom_rates * sof_deriv)
+        cov_rate = jacobian @ perturb_cov_raw
+        cov_rate += cov_rate.T
+        cov_rate += desc.perturbation_rate
+        expected[-nvar*nvar:] = np.reshape(cov_rate, (nvar*nvar,))
+        self.assertEqual(len(actual), 3*nb+3 + nvar**2)
+        for i in range(3*nb+3 + nvar**2):
+            self.assertAlmostEqual(actual[i], expected[i], places=10)
 
 
 class TestRK45Integrator(unittest.TestCase):

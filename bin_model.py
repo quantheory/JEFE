@@ -22,6 +22,7 @@ LogTransform
 """
 
 import numpy as np
+import scipy.linalg as la
 from scipy.special import spence, gamma, gammainc, digamma
 from scipy.integrate import solve_ivp
 
@@ -1005,6 +1006,10 @@ class ModelStateDescriptor:
     dsd_deriv_names - Names of variables with tracked derivatives.
     dsd_deriv_scales - Scales of variables with tracked derivatives.
                        These scales are applied on top of the dsd_scale.
+    perturbed_variables - A list of tuples, with each tuple containing a weight
+        vector, a transform, and a scale, in that order.
+    perturbation_rate - A covariance matrix representing the error introduced
+        to the perturbed variables per second.
 
     Methods:
     state_len
@@ -1013,13 +1018,16 @@ class ModelStateDescriptor:
     fallout_loc
     dsd_deriv_loc
     fallout_deriv_loc
+    perturb_cov_loc
     dsd_raw
     fallout_raw
     dsd_deriv_raw
     fallout_deriv_raw
+    perturb_cov_raw
     """
     def __init__(self, constants, mass_grid, dsd_scale=None,
-                 dsd_deriv_names=None, dsd_deriv_scales=None):
+                 dsd_deriv_names=None, dsd_deriv_scales=None,
+                 perturbed_variables=None, perturbation_rate=None):
         self.constants = constants
         self.mass_grid = mass_grid
         self.dsd_scale = constants.mass_conc_scale
@@ -1039,14 +1047,37 @@ class ModelStateDescriptor:
             self.dsd_deriv_num = 0
             self.dsd_deriv_names = []
             self.dsd_deriv_scales = np.zeros((0,))
+        if perturbed_variables is not None:
+            pn = len(perturbed_variables)
+            nb = mass_grid.num_bins
+            self.perturb_num = pn
+            self.perturb_wvs = np.zeros((pn, nb))
+            for i in range(pn):
+                self.perturb_wvs[i,:] = perturbed_variables[i][0]
+            self.perturb_transforms = [t[1] for t in perturbed_variables]
+            self.perturb_scales = np.array([t[2] for t in perturbed_variables])
+            self.perturbation_rate = np.zeros((pn, pn))
+            if perturbation_rate is not None:
+                assert perturbation_rate.shape == (pn, pn), \
+                    "perturbation_rate is the wrong shape, should be " \
+                    + str((pn, pn))
+                for i in range(pn):
+                    for j in range(pn):
+                        self.perturbation_rate[i,j] = perturbation_rate[i,j] \
+                            / perturbed_variables[i][2] \
+                            / perturbed_variables[j][2] * constants.time_scale
+        else:
+            assert perturbation_rate is None, \
+                "cannot specify perturbation_rate without perturbed_variables"
+            self.perturb_num = 0
 
     def state_len(self):
         """Return the length of the state vector."""
-        idx, num = self.dsd_deriv_loc(with_fallout=True)
-        return idx[-1] + num
+        idx, num = self.perturb_cov_loc()
+        return idx + num
 
     def construct_raw(self, dsd, fallout=None, dsd_deriv=None,
-                      fallout_deriv=None):
+                      fallout_deriv=None, perturb_cov=None):
         """Construct raw state vector from individual variables.
 
         Arguments:
@@ -1054,20 +1085,24 @@ class ModelStateDescriptor:
         fallout (optional) - Amount of third moment that has fallen out of the
                              model. If not specified, defaults to zero.
         dsd_deriv - DSD derivatives. Mandatory if dsd_deriv_num is not zero.
-        fallout_deriv - Fallout derivatives. If not specified, default to zero.
+        fallout_deriv - Fallout derivatives. If not specified, defaults to
+                        zero.
+        perturb_cov - Covariance matrix for Gaussian perturbation. If not
+                      specified, defaults to zero.
 
         Returns a 1-D array of size given by state_len().
         """
         raw = np.zeros((self.state_len(),))
         nb = self.mass_grid.num_bins
         ddn = self.dsd_deriv_num
+        pn = self.perturb_num
         assert len(dsd) == nb, "dsd of wrong size for this descriptor's grid"
         idx, num = self.dsd_loc()
         raw[idx:idx+num] = dsd / self.dsd_scale
         if fallout is None:
             fallout = 0.
         raw[self.fallout_loc()] = fallout / self.dsd_scale
-        if self.dsd_deriv_num > 0:
+        if ddn > 0:
             assert dsd_deriv is not None, \
                 "dsd_deriv input is required, but missing"
             assert (dsd_deriv.shape == (ddn, nb)), \
@@ -1088,6 +1123,21 @@ class ModelStateDescriptor:
                 "no dsd derivatives should be specified for this descriptor"
             assert fallout_deriv is None or len(fallout_deriv) == 0, \
                 "no fallout derivatives should be specified " \
+                "for this descriptor"
+        if pn > 0:
+            if perturb_cov is not None:
+                assert (perturb_cov.shape == (pn, pn)), \
+                    "perturb_cov input is the wrong shape"
+                perturb_cov = perturb_cov.copy()
+                for i in range(pn):
+                    for j in range(pn):
+                        perturb_cov[i,j] /= \
+                            self.perturb_scales[i] * self.perturb_scales[j]
+                idx, num = self.perturb_cov_loc()
+                raw[idx:idx+num] = np.reshape(perturb_cov, (num,))
+        else:
+            assert perturb_cov is None, \
+                "no perturbation covariance should be specified " \
                 "for this descriptor"
         return raw
 
@@ -1123,6 +1173,11 @@ class ModelStateDescriptor:
         If var_name is not provided, information for all derivatives is
         returned. If var_name is provided, information for just that derivative
         is returned.
+
+        Returns a tuple (idx, num), where idx is the location of the first
+        entry and num is the number of entries. If all derivative information
+        is returned, idx is a list of integers, while num is a scalar that is
+        the size of each contiguous block (since all will be the same size).
         """
         if with_fallout is None:
             with_fallout = False
@@ -1155,6 +1210,16 @@ class ModelStateDescriptor:
             return [i+num for i in idx]
         else:
             return idx+num
+
+    def perturb_cov_loc(self):
+        """Return location of perturbation covariance matrix.
+
+        Returns a tuple (idx, num), where idx is the location of the first
+        element and num is the number of elements.
+        """
+        idx, num = self.dsd_deriv_loc(with_fallout=True)
+        pn = self.perturb_num
+        return idx[-1] + num, pn*pn
 
     def dsd_raw(self, raw, with_fallout=None):
         """Return raw DSD data from the state vector.
@@ -1215,6 +1280,12 @@ class ModelStateDescriptor:
         else:
             return raw[idx]
 
+    def perturb_cov_raw(self, raw):
+        """Return raw perturbation covariance matrix from the state vector."""
+        idx, num = self.perturb_cov_loc()
+        pn = self.perturb_num
+        return np.reshape(raw[idx:idx+num], (pn, pn))
+
 
 class ModelState:
     """
@@ -1239,6 +1310,7 @@ class ModelState:
     fallout
     dsd_deriv
     fallout_deriv
+    perturb_cov
     dsd_time_deriv_raw
     time_derivative_raw
     linear_func_raw
@@ -1317,6 +1389,16 @@ class ModelState:
             return self.desc.fallout_deriv_raw(self.raw) \
                 * self.desc.dsd_scale * self.desc.dsd_deriv_scales[idx]
 
+    def perturb_cov(self):
+        """Return perturbation covariance matrix."""
+        output = self.desc.perturb_cov_raw(self.raw)
+        pn = self.desc.perturb_num
+        pscales = self.desc.perturb_scales
+        for i in range(pn):
+            for j in range(pn):
+                output[i,j] *= pscales[i] * pscales[j]
+        return output
+
     def dsd_time_deriv_raw(self, proc_tens):
         """Time derivative of the raw dsd using the given process tensors.
 
@@ -1337,12 +1419,17 @@ class ModelState:
         proc_tens - List of process tensors, the rates of which sum to give the
                     time derivative.
         """
-        ddn = self.desc.dsd_deriv_num
+        desc = self.desc
+        nb = self.mass_grid.num_bins
+        ddn = desc.dsd_deriv_num
+        pn = desc.perturb_num
         dfdt = np.zeros((len(self.raw),))
-        dsd_raw = self.desc.dsd_raw(self.raw)
-        dsd_deriv_raw = self.desc.dsd_deriv_raw(self.raw, with_fallout=True)
-        didx, dnum = self.desc.dsd_loc(with_fallout=True)
-        dridxs, drnum = self.desc.dsd_deriv_loc(with_fallout=True)
+        dsd_raw = desc.dsd_raw(self.raw)
+        dsd_deriv_raw = desc.dsd_deriv_raw(self.raw, with_fallout=True)
+        didx, dnum = desc.dsd_loc(with_fallout=True)
+        dridxs, drnum = desc.dsd_deriv_loc(with_fallout=True)
+        if pn > 0:
+            double_time_deriv = np.zeros((nb+1))
         for pt in proc_tens:
             if ddn > 0:
                 rate, derivative = pt.calc_rate(dsd_raw, out_flux=True,
@@ -1351,8 +1438,43 @@ class ModelState:
                 for i in range(ddn):
                     dfdt[dridxs[i]:dridxs[i]+drnum] += \
                         derivative @ dsd_deriv_raw[i,:]
+                if pn > 0:
+                    double_time_deriv += derivative @ rate
             else:
                 dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
+        if pn > 0:
+            pcidx, pcnum = desc.perturb_cov_loc()
+            ddsddt = desc.dsd_raw(dfdt)
+            ddsddt_deriv = np.zeros((ddn+1,nb))
+            ddsddt_deriv[0,:] = double_time_deriv[:nb]
+            ddsddt_deriv[1:,:] = desc.dsd_deriv_raw(dfdt)
+            perturb_cov_raw = desc.perturb_cov_raw(self.raw)
+            lfs = np.zeros((pn,))
+            lf_jac = np.zeros((pn, ddn+1))
+            lf_rates = np.zeros((pn,))
+            lf_rate_jac = np.zeros((pn, ddn+1))
+            for i in range(pn):
+                wv = self.desc.perturb_wvs[i]
+                lfs[i], lf_jac[i,:] = \
+                    self.linear_func_raw(wv, derivative=True,
+                                         dfdt=ddsddt)
+                lf_rates[i], lf_rate_jac[i,:] = \
+                    self.linear_func_rate_raw(wv, ddsddt,
+                                              dfdt_deriv=ddsddt_deriv)
+            transform_mat = np.zeros((pn, pn))
+            transform_mat2 = np.zeros((pn,))
+            for i in range(pn):
+                transform = desc.perturb_transforms[i]
+                transform_mat[i,i] = transform.derivative(lfs[i])
+                transform_mat2[i] = \
+                    transform.second_over_first_derivative(lfs[i])
+            jacobian = la.inv(transform_mat * lf_jac)
+            jacobian = transform_mat @ lf_rate_jac @ jacobian
+            jacobian += np.diag(lf_rates * transform_mat2)
+            cov_rate = jacobian @ perturb_cov_raw
+            cov_rate += cov_rate.T
+            cov_rate += desc.perturbation_rate
+            dfdt[pcidx:pcidx+pcnum] = np.reshape(cov_rate, (pcnum,))
         return dfdt
 
     def linear_func_raw(self, weight_vector, derivative=None, dfdt=None):
