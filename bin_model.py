@@ -18,6 +18,7 @@ KernelTensor
 ModelStateDescriptor
 ModelState
 RK45Integrator
+LogTransform
 """
 
 import numpy as np
@@ -1537,3 +1538,22 @@ class RK45Integrator:
         for i in range(len(times)):
             states.append(ModelState(desc,raws[i,:]))
         return times * tscale, states
+
+
+class LogTransform:
+    """
+    Transform a variable using the natural logarithm.
+
+    Methods:
+    transform
+    derivative
+    second_over_first_derivative
+    """
+    def transform(self, x):
+        return np.log(x)
+
+    def derivative(self, x):
+        return 1./x
+
+    def second_over_first_derivative(self, x):
+        return -1./x

@@ -3082,3 +3082,17 @@ class TestRK45Integrator(unittest.TestCase):
             for j in range(nb):
                 self.assertAlmostEqual(actual_dsd[j]/scale,
                                        expected_dsd[j]/scale)
+
+class TestLogTransform(unittest.TestCase):
+    """
+    Test LogTransform methods.
+    """
+    def test_log_transform(self):
+        self.assertEqual(LogTransform().transform(2.), np.log(2.))
+
+    def test_log_transform_deriv(self):
+        self.assertEqual(LogTransform().derivative(2.), 1./2.)
+
+    def test_log_transform_second_over_first_derivative(self):
+        self.assertEqual(LogTransform().second_over_first_derivative(2.),
+                         -1./2.)
