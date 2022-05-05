@@ -1242,6 +1242,7 @@ class ModelState:
     time_derivative_raw
     linear_func_raw
     linear_func_rate_raw
+    rain_prod_breakdown
     """
     def __init__(self, desc, raw):
         self.constants = desc.constants
@@ -1417,6 +1418,73 @@ class ModelState:
             return np.dot(dfdt, weight_vector)
         else:
             return np.dot(dfdt, weight_vector), dfdt_deriv @ weight_vector
+
+    def rain_prod_breakdown(self, ktens, cloud_vector, derivative=None):
+        """Calculate autoconversion and accretion rates.
+
+        Arguments:
+        ktens - Collision KernelTensor.
+        cloud_vector - A vector of values between 0 and 1, representing the
+                       percentage of mass in a bin that should be considered
+                       cloud rather than rain.
+        derivative (optional) - If True, returns Jacobian information.
+                                Defaults to False.
+
+        If derivative is False, the return value is an array of length 2
+        containing only the autoconversion and accretion rates. If derivative
+        is True, the return value is a tuple, with the first entry containing
+        the process rates and the second entry containing the Jacobian of those
+        rates with respect to time and the dsd_deriv variables listed in desc.
+        """
+        if derivative is None:
+            derivative = False
+        rate_scale = self.constants.mass_conc_scale / self.constants.time_scale
+        grid = self.mass_grid
+        nb = grid.num_bins
+        m3_vector = grid.moment_weight_vector(3)
+        dsd_raw = self.desc.dsd_raw(self.raw)
+        total_inter = ktens.calc_rate(dsd_raw, out_flux=True,
+                                      derivative=derivative)
+        if derivative:
+            save_deriv = total_inter[1]
+            total_inter = total_inter[0]
+            ddn = self.desc.dsd_deriv_num
+            dsd_deriv_raw = np.zeros((ddn+1, nb+1))
+            dsd_deriv_raw[0,:] = total_inter
+            dsd_deriv_raw[1:,:] = self.desc.dsd_deriv_raw(self.raw,
+                                                          with_fallout=True)
+            total_deriv = save_deriv @ dsd_deriv_raw.T
+        cloud_dsd_raw = dsd_raw * cloud_vector
+        cloud_inter = ktens.calc_rate(cloud_dsd_raw, out_flux=True,
+                                      derivative=derivative)
+        if derivative:
+            cloud_dsd_deriv = np.transpose(dsd_deriv_raw).copy()
+            for i in range(3):
+                cloud_dsd_deriv[:nb,i] *= cloud_vector
+                cloud_dsd_deriv[nb,i] = 0.
+            cloud_deriv = cloud_inter[1] @ cloud_dsd_deriv
+            cloud_inter = cloud_inter[0]
+        rain_vector = 1. - cloud_vector
+        auto = np.dot(cloud_inter[:nb]*rain_vector, m3_vector) \
+            + cloud_inter[nb]
+        auto *= rate_scale
+        no_csc_or_auto = total_inter - cloud_inter
+        accr = np.dot(-no_csc_or_auto[:nb]*cloud_vector, m3_vector)
+        accr *= rate_scale
+        rates = np.array([auto, accr])
+        if derivative:
+            rate_deriv = np.zeros((2, ddn+1))
+            rate_deriv[0,:] = (m3_vector * rain_vector) @ cloud_deriv[:nb,:] \
+                + cloud_deriv[nb,:]
+            no_soa_deriv = total_deriv - cloud_deriv
+            rate_deriv[1,:] = -(m3_vector * cloud_vector) @ no_soa_deriv[:nb,:]
+            rate_deriv *= rate_scale
+            rate_deriv[:,0] /= self.constants.time_scale
+            for i in range(ddn):
+                rate_deriv[:,1+i] *= self.desc.dsd_deriv_scales[i]
+            return rates, rate_deriv
+        else:
+            return rates
 
 
 class RK45Integrator:

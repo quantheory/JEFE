@@ -2899,6 +2899,102 @@ class TestModelState(unittest.TestCase):
         for i in range(2):
             self.assertAlmostEqual(actual_deriv[i] / expected_deriv[i], 1.)
 
+    def test_rain_prod_breakdown(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        raw = desc.construct_raw(dsd)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        cloud_idx = grid.find_bin(np.log(const.rain_m))
+        cloud_vector = np.zeros((nb,))
+        cloud_vector[:cloud_idx] = 1.
+        actual = state.rain_prod_breakdown(ktens, cloud_vector)
+        self.assertEqual(len(actual), 2)
+        cloud_weight_vector = grid.moment_weight_vector(3, cloud_only=True)
+        rain_weight_vector = grid.moment_weight_vector(3, rain_only=True)
+        cloud_inter = ktens.calc_rate(dsd_raw * cloud_vector, out_flux=True)
+        auto = np.dot(rain_weight_vector, cloud_inter[:nb]) + cloud_inter[nb]
+        auto *= const.mass_conc_scale / const.time_scale
+        self.assertAlmostEqual(actual[0] / auto, 1.)
+        total_inter = ktens.calc_rate(dsd_raw, out_flux=True)
+        no_cloud_sc_or_auto = total_inter - cloud_inter
+        accr = -np.dot(cloud_weight_vector, no_cloud_sc_or_auto[:nb])
+        accr *= const.mass_conc_scale / const.time_scale
+        self.assertAlmostEqual(actual[1] / accr, 1.)
+
+    def test_rain_prod_breakdown_with_derivative(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        desc = self.desc
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        dsd_deriv_raw = np.zeros((3, nb+1))
+        dsd_deriv_raw[0,:] = state.dsd_time_deriv_raw([ktens])
+        dsd_deriv_raw[1:,:] = desc.dsd_deriv_raw(raw, with_fallout=True)
+        cloud_idx = grid.find_bin(np.log(const.rain_m))
+        cloud_vector = np.zeros((nb,))
+        cloud_vector[:cloud_idx] = 1.
+        actual, actual_deriv = state.rain_prod_breakdown(ktens, cloud_vector,
+                                                         derivative=True)
+        self.assertEqual(len(actual), 2)
+        self.assertEqual(actual_deriv.shape, (2, 3))
+        cloud_weight_vector = grid.moment_weight_vector(3, cloud_only=True)
+        rain_weight_vector = grid.moment_weight_vector(3, rain_only=True)
+        cloud_inter, cloud_deriv = ktens.calc_rate(dsd_raw * cloud_vector,
+                                                   out_flux=True,
+                                                   derivative=True)
+        auto = np.dot(rain_weight_vector, cloud_inter[:nb]) + cloud_inter[nb]
+        auto *= const.mass_conc_scale / const.time_scale
+        self.assertAlmostEqual(actual[0] / auto, 1.)
+        cloud_dsd_deriv = np.transpose(dsd_deriv_raw).copy()
+        for i in range(3):
+            cloud_dsd_deriv[:nb,i] *= cloud_vector
+            cloud_dsd_deriv[nb,i] = 0.
+        cloud_f_deriv = cloud_deriv @ cloud_dsd_deriv
+        auto_deriv = rain_weight_vector @ cloud_f_deriv[:nb,:] \
+            + cloud_f_deriv[nb,:]
+        auto_deriv *= const.mass_conc_scale / const.time_scale
+        auto_deriv[0] /= const.time_scale
+        auto_deriv[1:] *= desc.dsd_deriv_scales
+        for i in range(3):
+            self.assertAlmostEqual(actual_deriv[0,i] / auto_deriv[i], 1.)
+        total_inter, total_deriv = ktens.calc_rate(dsd_raw, out_flux=True,
+                                                   derivative=True)
+        no_cloud_sc_or_auto = total_inter - cloud_inter
+        accr = -np.dot(cloud_weight_vector, no_cloud_sc_or_auto[:nb])
+        accr *= const.mass_conc_scale / const.time_scale
+        self.assertAlmostEqual(actual[1] / accr, 1.)
+        no_csc_or_auto_deriv = total_deriv @ dsd_deriv_raw.T - cloud_f_deriv
+        accr_deriv = -cloud_weight_vector @ no_csc_or_auto_deriv[:nb,:]
+        accr_deriv *= const.mass_conc_scale / const.time_scale
+        accr_deriv[0] /= const.time_scale
+        accr_deriv[1:] *= desc.dsd_deriv_scales
+        for i in range(3):
+            self.assertAlmostEqual(actual_deriv[1,i] / accr_deriv[i], 1.)
+
 
 class TestRK45Integrator(unittest.TestCase):
     """
