@@ -1027,7 +1027,8 @@ class ModelStateDescriptor:
     """
     def __init__(self, constants, mass_grid, dsd_scale=None,
                  dsd_deriv_names=None, dsd_deriv_scales=None,
-                 perturbed_variables=None, perturbation_rate=None):
+                 perturbed_variables=None, perturbation_rate=None,
+                 correction_time=None):
         self.constants = constants
         self.mass_grid = mass_grid
         self.dsd_scale = constants.mass_conc_scale
@@ -1066,9 +1067,18 @@ class ModelStateDescriptor:
                         self.perturbation_rate[i,j] = perturbation_rate[i,j] \
                             / perturbed_variables[i][2] \
                             / perturbed_variables[j][2] * constants.time_scale
+            if correction_time is not None:
+                self.correction_time = correction_time / constants.time_scale
+            else:
+                assert pn == self.dsd_deriv_num + 1, \
+                    "must specify correction time unless perturb_num is " \
+                    "equal to dsd_deriv_num+1"
+                self.correction_time = None
         else:
             assert perturbation_rate is None, \
                 "cannot specify perturbation_rate without perturbed_variables"
+            assert correction_time is None, \
+                "cannot specify correction_time without perturbed_variables"
             self.perturb_num = 0
 
     def state_len(self):
@@ -1358,7 +1368,7 @@ class ModelState:
         `(dsd_deriv_num, num_bins)` is returned, with all derivatives in it.
         If var_name is provided, a 1D array of size num_bins is returned.
         """
-        dsd_deriv = self.desc.dsd_deriv_raw(self.raw, var_name)
+        dsd_deriv = self.desc.dsd_deriv_raw(self.raw, var_name).copy()
         if var_name is None:
             for i in range(self.desc.dsd_deriv_num):
                 dsd_deriv[i,:] *= self.desc.dsd_deriv_scales[i]
@@ -1391,7 +1401,7 @@ class ModelState:
 
     def perturb_cov(self):
         """Return perturbation covariance matrix."""
-        output = self.desc.perturb_cov_raw(self.raw)
+        output = self.desc.perturb_cov_raw(self.raw).copy()
         pn = self.desc.perturb_num
         pscales = self.desc.perturb_scales
         for i in range(pn):
@@ -1468,12 +1478,24 @@ class ModelState:
                 transform_mat[i,i] = transform.derivative(lfs[i])
                 transform_mat2[i] = \
                     transform.second_over_first_derivative(lfs[i])
-            jacobian = la.inv(transform_mat * lf_jac)
-            jacobian = transform_mat @ lf_rate_jac @ jacobian
+            zeta_to_v = transform_mat @ lf_jac
+            jacobian = transform_mat @ lf_rate_jac @ la.pinv(zeta_to_v)
             jacobian += np.diag(lf_rates * transform_mat2)
-            cov_rate = jacobian @ perturb_cov_raw
+            if self.desc.correction_time is None:
+                perturb_cov_projected = perturb_cov_raw
+            else:
+                projection = la.inv(zeta_to_v.T @ desc.perturbation_rate
+                                        @ zeta_to_v)
+                projection = zeta_to_v @ projection @ zeta_to_v.T \
+                                @ desc.perturbation_rate
+                perturb_cov_projected = projection @ perturb_cov_raw \
+                                            @ projection.T
+            cov_rate = jacobian @ perturb_cov_projected
             cov_rate += cov_rate.T
             cov_rate += desc.perturbation_rate
+            if self.desc.correction_time is not None:
+                cov_rate += (perturb_cov_projected - perturb_cov_raw) \
+                                / self.desc.correction_time
             dfdt[pcidx:pcidx+pcnum] = np.reshape(cov_rate, (pcnum,))
         return dfdt
 
@@ -1646,7 +1668,7 @@ class RK45Integrator:
         times = np.linspace(0., t_len, num_step+1)
         raw_len = len(state.raw)
         rate_fun = lambda t, raw: \
-            ModelState(state.desc,raw).time_derivative_raw(proc_tens)
+            ModelState(state.desc, raw).time_derivative_raw(proc_tens)
         solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
                              method='RK45', t_eval=times, max_step=self.dt)
         output = np.transpose(solbunch.y)
