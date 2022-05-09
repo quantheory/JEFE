@@ -24,7 +24,7 @@ LogTransform
 import numpy as np
 import scipy.linalg as la
 from scipy.special import spence, gamma, gammainc, digamma
-from scipy.integrate import solve_ivp
+from scipy.integrate import dblquad, solve_ivp
 
 def add_logs(x, y):
     """Returns log(exp(x)+exp(y))."""
@@ -167,6 +167,63 @@ def gamma_dist_d_nu_deriv(grid, lam, nu):
     bin_func = lower_gamma_deriv(nu+3., lam*grid.bin_bounds_d) / gnu3
     bin_func -= gammainc(nu+3., lam*grid.bin_bounds_d) * digamma(nu+3.)
     return (bin_func[1:] - bin_func[:-1]) / grid.bin_widths
+
+def beard_v(const, d):
+    eta = 1.818e-5
+    l = 6.62e-8
+    g = 9.81
+    csc = 1 + 2.51 * l / d
+    sigma = 7.197e-2
+    deltap = (const.rho_water - const.rho_air)
+    if d < 1.9e-5:
+        c1 = deltap * g / (18. * eta)
+        return c1 * csc * d**2
+    elif d < 1.07e-3:
+        c2 = 4. * const.rho_air * deltap * g \
+            / (3. * eta**2)
+        x = np.log(c2 * d**3)
+        bs = [-0.318657e1, 0.992696e0, -0.153193e-2, -0.987059e-3,
+              -0.578878e-3, 0.855176e-4, -0.327815e-5]
+        y = bs[0] + x*(bs[1] + x*(bs[2] + x*(bs[3]
+                    + x*(bs[4] + x*(bs[5] + x*bs[6])))))
+        return eta * csc * np.exp(y) / (const.rho_air * d)
+    else:
+        c3 = 4 * deltap * g / (3. * sigma)
+        bo = c3 * d**2
+        np6 = (sigma**3 * const.rho_air**2 / (eta**4 * deltap * g))**(1./6.)
+        x = np.log(bo * np6)
+        bs = [-0.500015e1, 0.523778e1, -0.204914e1, 0.475294,
+              -0.542819e-1, 0.238449e-2]
+        y = bs[0] + x*(bs[1] + x*(bs[2] + x*(bs[3]
+                    + x*(bs[4] + x*bs[5]))))
+        nre = np6 * np.exp(y)
+        return eta * nre / (const.rho_air * d)
+
+def sc_efficiency(d1, d2):
+    al = 0.5e6 * max(d1, d2)
+    asm = 0.5e6 * min(d1, d2)
+    x = asm / al
+    al = max(al, 10.)
+    m = 6.
+    n = 1.5
+    b = (1.587 * al + 32.73 + 344. * (20. / al)**1.56 \
+        * np.exp(-(al-10.)/15.) * np.sin(np.pi*(al-10.)/63.)) / al**2
+    x1 = 0.
+    u2 = 0.
+    prev_x1 = 100.
+    prev_u2 = 100.
+    rtol = 1.e-10
+    for i in range(100):
+        if np.abs(x1 - prev_x1) < rtol * prev_x1 and \
+            np.abs(u2 - prev_u2) < rtol * prev_u2:
+            break
+        prev_x1 = x1
+        prev_u2 = u2
+        x1 = b / (1. - b * (1. + prev_u2**n)**(-1./n))
+        u2 = b / (1.75 - b * (1. + prev_x1**m)**(-1./m))
+    x1_term = b / (x**m + x1**m)**(1./m)
+    u2_term = b / ((1.-x)**n + u2**n)**(1./n)
+    return ((1. + x - x1_term - u2_term) / (1. + x)) **2
 
 class ModelConstants:
     """
@@ -638,6 +695,78 @@ class LongKernel(Kernel):
             rain_part = self.kernel_integral(self.log_rain_m, b,
                                              lx_low, lx_high, btype=2)
             return start + cloud_part + rain_part
+
+
+class HallKernel(Kernel):
+    """
+    Implement Hall-like kernel.
+
+    Initialization arguments:
+    constants - ModelConstants object for the model.
+    efficiency - Collection efficiency formula to use.
+
+    Methods:
+    kernel_d
+    """
+    def __init__(self, constants, efficiency):
+        self.constants = constants
+        self.efficiency = efficiency
+
+    def kernel_d(self, d1, d2):
+        """Calculate kernel function as a function of particle diameters."""
+        const = self.constants
+        v_diff = np.abs(beard_v(const, d1) - beard_v(const, d2))
+        eff = self.efficiency(d1, d2)
+        return 0.25 * np.pi * (d1 + d2)**2 * eff * v_diff
+
+    def kernel_lx(self, lx1, lx2):
+        """Calculate kernel function as a function of log scaled mass."""
+        const = self.constants
+        x1 = np.exp(lx1)
+        x2 = np.exp(lx2)
+        d1 = const.scaled_mass_to_diameter(np.exp(lx1))
+        d2 = const.scaled_mass_to_diameter(np.exp(lx2))
+        return self.kernel_d(d1, d2) / (x1 * x2)
+
+    def kernel_integral(self, a, b, lxm, lxp, btype):
+        """Computes an integral necessary for constructing the kernel tensor.
+
+        If K_f is the scaled kernel function, this returns:
+
+        \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
+
+        Arguments:
+        a - Lower bound parameter for l_y.
+        b - Upper bound parameter for l_y.
+        lxm - Lower bound for l_x.
+        lxp - Upper bound for l_x.
+        btype - Boundary type for y integrals.
+
+        Boundary functions can be either constant or of the form
+            p(c) = log(e^{c} - e^{l_x})
+        This is determined by btype:
+         - If btype = 0, g(a) = a and h(b) = b.
+         - If btype = 1, g(a) = p(a) and h(b) = b.
+         - If btype = 2, g(a) = a and h(b) = p(b).
+         - If btype = 3, g(a) = p(a) and h(b) = p(b).
+        """
+        tol = 1.e-12
+        # For efficiency and stability, refuse to bother with extremely
+        # small ranges of particle sizes.
+        if lxp - lxm < tol:
+            return 0.
+        f = lambda ly, lx: \
+            np.exp(lx) * self.kernel_lx(lx, ly)
+        if btype % 2 == 0:
+            g = a
+        else:
+            g = lambda lx: sub_logs(a, lx)
+        if btype < 2:
+            h = b
+        else:
+            h = lambda lx: sub_logs(b, lx)
+        y, _ = dblquad(f, lxm, lxp, g, h)
+        return y
 
 
 class MassGrid:
@@ -1484,10 +1613,11 @@ class ModelState:
             if self.desc.correction_time is None:
                 perturb_cov_projected = perturb_cov_raw
             else:
-                projection = la.inv(zeta_to_v.T @ desc.perturbation_rate
+                error_cov_inv = la.inv(desc.perturbation_rate)
+                projection = la.inv(zeta_to_v.T @ error_cov_inv
                                         @ zeta_to_v)
                 projection = zeta_to_v @ projection @ zeta_to_v.T \
-                                @ desc.perturbation_rate
+                                @ error_cov_inv
                 perturb_cov_projected = projection @ perturb_cov_raw \
                                             @ projection.T
             cov_rate = jacobian @ perturb_cov_projected

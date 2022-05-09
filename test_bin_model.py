@@ -3682,3 +3682,121 @@ class TestLogTransform(unittest.TestCase):
     def test_log_transform_second_over_first_derivative(self):
         self.assertEqual(LogTransform().second_over_first_derivative(2.),
                          -1./2.)
+
+
+class TestBeardV(unittest.TestCase):
+    """
+    Test beard_v function.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+
+    def test_low_beard_v(self):
+        const = self.constants
+        self.assertAlmostEqual(beard_v(const, 1.e-5),
+                               0.0030440)
+
+    def test_medium_beard_v(self):
+        const = self.constants
+        self.assertAlmostEqual(beard_v(const, 6.e-4),
+                               2.4455837)
+
+    def test_high_beard_v(self):
+        const = self.constants
+        self.assertAlmostEqual(beard_v(const, 2.e-3),
+                               6.5141471)
+
+
+class TestSCEfficiency(unittest.TestCase):
+    """
+    Test sc_efficiency function.
+    """
+
+    def test_sc_efficiency(self):
+        d1 = 50.e-6
+        x = 0.7
+        d2 = x * d1
+        self.assertAlmostEqual(sc_efficiency(d1, d2),
+                               (0.8 / (1. + x))**2,
+                               places=2)
+        self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
+
+    def test_sc_efficiency_low_diameter(self):
+        d1 = 5.e-6
+        x = 0.7
+        d2 = x * d1
+        self.assertAlmostEqual(sc_efficiency(d1, d2),
+                               sc_efficiency(20.e-6, x * 20.e-6))
+        self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
+
+
+class TestHallKernel(unittest.TestCase):
+    """
+    Test HallKernel methods.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3,
+                                        time_scale=400.)
+        self.kernel = HallKernel(self.constants, sc_efficiency)
+
+    def test_kernel_d(self):
+        const = self.constants
+        d1 = 10.e-6
+        d2 = 100.e-6
+        actual = self.kernel.kernel_d(d1, d2)
+        expected = np.abs(beard_v(const, d1) - beard_v(const, d2))
+        expected *= sc_efficiency(d1, d2)
+        expected *= 0.25 * np.pi * (d1 + d2)**2
+        self.assertAlmostEqual(actual / expected, 1.)
+        self.assertEqual(actual, self.kernel.kernel_d(d2, d1))
+
+    def test_kernel_lx(self):
+        const = self.constants
+        d1 = 10.e-6
+        d2 = 100.e-6
+        x1 = const.diameter_to_scaled_mass(d1)
+        x2 = const.diameter_to_scaled_mass(d2)
+        lx1 = np.log(x1)
+        lx2 = np.log(x2)
+        actual = self.kernel.kernel_lx(lx1, lx2)
+        expected = self.kernel.kernel_d(d1, d2) / (x1 * x2)
+        self.assertAlmostEqual(actual / expected, 1.)
+        self.assertEqual(actual, self.kernel.kernel_lx(lx2, lx1))
+
+    def test_kernel_integral(self):
+        a = -1.
+        afun = lambda lx: sub_logs(a, lx)
+        b = 0.
+        bfun = lambda lx: sub_logs(b, lx)
+        lxm = -2.5
+        lxp = -2.
+        f = lambda ly, lx: np.exp(lx) * self.kernel.kernel_lx(lx, ly)
+        btype = 0
+        actual = self.kernel.kernel_integral(-1., 0., lxm, lxp, btype)
+        expected, _ = dblquad(f, lxm, lxp, a, b)
+        self.assertAlmostEqual(actual / expected, 1.)
+        btype = 1
+        actual = self.kernel.kernel_integral(-1., 0., lxm, lxp, btype)
+        expected, _ = dblquad(f, lxm, lxp, afun, b)
+        self.assertAlmostEqual(actual / expected, 1.)
+        btype = 2
+        actual = self.kernel.kernel_integral(-1., 0., lxm, lxp, btype)
+        expected, _ = dblquad(f, lxm, lxp, a, bfun)
+        self.assertAlmostEqual(actual / expected, 1.)
+        btype = 3
+        actual = self.kernel.kernel_integral(-1., 0., lxm, lxp, btype)
+        expected, _ = dblquad(f, lxm, lxp, afun, bfun)
+        self.assertAlmostEqual(actual / expected, 1.)
+
+    def test_kernel_integral_skips_close_x_bounds(self):
+        lx1 = -3.
+        lx2 = lx1 + 1.e-14
+        actual = self.kernel.kernel_integral(-1., 0., lx1, lx2, btype=0)
+        self.assertEqual(actual, 0.)
