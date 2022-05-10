@@ -15,16 +15,18 @@ LongKernel
 MassGrid
 GeometricMassGrid
 KernelTensor
+LogTransform
 ModelStateDescriptor
 ModelState
 RK45Integrator
-LogTransform
+Experiment
 """
 
 import numpy as np
 import scipy.linalg as la
 from scipy.special import spence, gamma, gammainc, digamma
 from scipy.integrate import dblquad, solve_ivp
+import netCDF4 as nc4
 
 def add_logs(x, y):
     """Returns log(exp(x)+exp(y))."""
@@ -169,6 +171,14 @@ def gamma_dist_d_nu_deriv(grid, lam, nu):
     return (bin_func[1:] - bin_func[:-1]) / grid.bin_widths
 
 def beard_v(const, d):
+    """Terminal velocity of a particle of the given diameter.
+
+    Arguments:
+    d - Particle diameter in meters.
+
+    Returned value is velocity according to Beard (1976) in meters/second.
+    """
+    d = min(7.e-3, d)
     eta = 1.818e-5
     l = 6.62e-8
     g = 9.81
@@ -200,6 +210,13 @@ def beard_v(const, d):
         return eta * nre / (const.rho_air * d)
 
 def sc_efficiency(d1, d2):
+    """Collection efficiency between particles of the given diameters.
+
+    Arguments:
+    d1, d2 - Particle diameters in meters.
+
+    Returned value is collection efficiency according to Scott and Chen (1970).
+    """
     al = 0.5e6 * max(d1, d2)
     asm = 0.5e6 * min(d1, d2)
     x = asm / al
@@ -251,8 +268,12 @@ class ModelConstants:
     time_scale
 
     Methods:
-    diameter_to_scaled_mass - Convert diameter in meters to scaled mass.
-    scaled_mass_to_diameter - Convert scaled mass to diameter in meters.
+    diameter_to_scaled_mass
+    scaled_mass_to_diameter
+    to_netcdf
+
+    Class methods:
+    from_netcdf
     """
 
     def __init__(self, rho_water, rho_air, std_diameter, rain_d,
@@ -278,6 +299,44 @@ class ModelConstants:
         """Convert non-dimensionalized particle size to diameter in meters."""
         return self.std_diameter * x**(1./3.)
 
+    @classmethod
+    def from_netcdf(cls, netcdf_file):
+        """Retrieve a ModelConstants object from a NetcdfFile."""
+        dataset = netcdf_file.nc
+        rho_water = netcdf_file.read_scalar('rho_water')
+        rho_air = netcdf_file.read_scalar('rho_air')
+        std_diameter = netcdf_file.read_scalar('std_diameter')
+        rain_d = netcdf_file.read_scalar('rain_d')
+        mass_conc_scale = netcdf_file.read_scalar('mass_conc_scale')
+        time_scale = netcdf_file.read_scalar('time_scale')
+        return ModelConstants(rho_water=rho_water,
+                              rho_air=rho_air,
+                              std_diameter=std_diameter,
+                              rain_d=rain_d,
+                              mass_conc_scale=mass_conc_scale,
+                              time_scale=time_scale)
+
+    def to_netcdf(self, netcdf_file):
+        """Write data from this object to a netCDF file."""
+        netcdf_file.write_scalar('rho_water', self.rho_water,
+            'f8', "kg/m^3",
+            "Density of water")
+        netcdf_file.write_scalar('rho_air', self.rho_air,
+            'f8', "kg/m^3",
+            "Density of air")
+        netcdf_file.write_scalar('std_diameter', self.std_diameter,
+            'f8', "m",
+            "Particle length scale used for nondimensionalization")
+        netcdf_file.write_scalar('rain_d', self.rain_d,
+            'f8', "m",
+            "Threshold diameter defining the boundary between cloud and rain")
+        netcdf_file.write_scalar('mass_conc_scale', self.mass_conc_scale,
+            'f8', "kg/m^3",
+            "Liquid mass concentration scale used for nondimensionalization")
+        netcdf_file.write_scalar('time_scale', self.time_scale,
+            'f8', "s",
+            "Time scale used for nondimensionalization")
+
 
 class Kernel:
     """
@@ -286,13 +345,20 @@ class Kernel:
     Methods:
     integrate_over_bins
     kernel_integral
+    to_netcdf
 
     Utility methods:
     find_corners
     min_max_ly
     get_lxs_and_btypes
     get_ly_bounds
+
+    Class methods:
+    from_netcdf
     """
+
+    kernel_type_str_len = 32
+    """Length of kernel type string written to file."""
 
     def find_corners(self, ly1, ly2, lz1, lz2):
         """Returns lx-coordinates of four corners of an integration region.
@@ -483,6 +549,24 @@ class Kernel:
                                            lxs[i], lxs[i+1], btypes[i])
         return output
 
+    def to_netcdf(self, netcdf_file):
+        raise NotImplementedError
+
+    @classmethod
+    def from_netcdf(cls, netcdf_file, constants):
+        """Retrieve a Kernel object from a NetcdfFile."""
+        kernel_type = netcdf_file.read_characters('kernel_type')
+        if kernel_type == 'Long':
+            kc = netcdf_file.read_scalar('kc')
+            kr = netcdf_file.read_scalar('kr')
+            rain_m = netcdf_file.read_scalar('rain_m')
+            return LongKernel(constants, kc=kc, kr=kr, rain_m=rain_m)
+        elif kernel_type == 'Hall':
+            efficiency_name = netcdf_file.read_characters('efficiency_name')
+            return HallKernel(constants, efficiency_name)
+        else:
+            assert False, "unrecognized kernel_type in file"
+
 
 class LongKernel(Kernel):
     """
@@ -504,24 +588,37 @@ class LongKernel(Kernel):
                        Effectively a synonym for kc_cgs.
     kr_cgs (optional) - Rain kernel parameter in cgs (cm^3/g/s) units.
     kr_si (optional) - Rain kernel parameter in SI (m^3/kg/s) units.
+    kc (optional) - Semi-nondimensionalized cloud kernel parameter (m^3/s).
+    kr (optional) - Semi-nondimensionalized rain kernel parameter (m^3/s).
+    rain_m (optional) - Mass used to transition between cloud and rain
+                        formulae.
     """
 
-    def __init__(self, constants, kc_cgs=None, kc_si=None, kr_cgs=None,
-                 kr_si=None, rain_m=None):
-        assert (kc_cgs is None) or (kc_si is None)
-        assert (kr_cgs is None) or (kr_si is None)
+    def __init__(self, constants, kc=None, kr=None, kc_cgs=None, kc_si=None,
+                 kr_cgs=None, kr_si=None, rain_m=None):
+        assert ((kc is None) and (kc_cgs is None)) \
+                or ((kc is None) and (kc_si is None)) \
+                or ((kc_cgs is None) and (kc_si is None))
+        assert ((kr is None) and (kr_cgs is None)) \
+                or ((kr is None) and (kr_si is None)) \
+                or ((kr_cgs is None) and (kr_si is None))
         if kc_cgs is None:
             kc_cgs = 9.44e9
         if kc_si is None:
             kc_si = kc_cgs
-        self.kc = kc_si * constants.std_mass**2
+        if kc is None:
+            kc = kc_si * constants.std_mass**2
+        self.kc = kc
         if kr_cgs is None:
             kr_cgs = 5.78e3
         if kr_si is None:
             kr_si = kr_cgs * 1.e-3
-        self.kr = kr_si * constants.std_mass
+        if kr is None:
+            kr = kr_si * constants.std_mass
+        self.kr = kr
         if rain_m is None:
             rain_m = constants.diameter_to_scaled_mass(1.e-4)
+        self.rain_m = rain_m
         self.log_rain_m = np.log(rain_m)
 
     def _integral_cloud(self, a, b, lxm, lxp, btype):
@@ -696,6 +793,24 @@ class LongKernel(Kernel):
                                              lx_low, lx_high, btype=2)
             return start + cloud_part + rain_part
 
+    def to_netcdf(self, netcdf_file):
+        """Write internal state to netCDF file."""
+        netcdf_file.write_dimension('kernel_type_str_len',
+                                    self.kernel_type_str_len)
+        netcdf_file.write_characters('kernel_type',
+                                     'Long',
+                                     'kernel_type_str_len',
+                                     'Type of kernel')
+        netcdf_file.write_scalar('kc', self.kc,
+            'f8', 'm^3/s',
+            "Semi-nondimensionalized Long kernel cloud parameter")
+        netcdf_file.write_scalar('kr', self.kr,
+            'f8', 'm^3/s',
+            "Semi-nondimensionalized Long kernel rain parameter")
+        netcdf_file.write_scalar('rain_m', self.rain_m,
+            'f8', 'kg',
+            "Cloud-rain threshold mass")
+
 
 class HallKernel(Kernel):
     """
@@ -703,14 +818,23 @@ class HallKernel(Kernel):
 
     Initialization arguments:
     constants - ModelConstants object for the model.
-    efficiency - Collection efficiency formula to use.
+    efficiency_name - Name of collection efficiency formula to use.
+                      Can only be 'ScottChen'.
 
     Methods:
     kernel_d
     """
-    def __init__(self, constants, efficiency):
+
+    efficiency_name_len = 32
+    """Maximum length of collection efficiency formula name."""
+
+    def __init__(self, constants, efficiency_name):
         self.constants = constants
-        self.efficiency = efficiency
+        self.efficiency_name = efficiency_name
+        if efficiency_name == 'ScottChen':
+            self.efficiency = sc_efficiency
+        else:
+            assert False, "bad value for efficiency_name: " + efficiency_name
 
     def kernel_d(self, d1, d2):
         """Calculate kernel function as a function of particle diameters."""
@@ -768,6 +892,21 @@ class HallKernel(Kernel):
         y, _ = dblquad(f, lxm, lxp, g, h)
         return y
 
+    def to_netcdf(self, netcdf_file):
+        """Write internal state to netCDF file."""
+        netcdf_file.write_dimension('kernel_type_str_len',
+                                    self.kernel_type_str_len)
+        netcdf_file.write_characters('kernel_type',
+                                     'Hall',
+                                     'kernel_type_str_len',
+                                     'Type of kernel')
+        netcdf_file.write_dimension('efficiency_name_len',
+                                    self.efficiency_name_len)
+        netcdf_file.write_characters('efficiency_name',
+                                     self.efficiency_name,
+                                     'efficiency_name_len',
+                                     'Collection efficiency formula name')
+
 
 class MassGrid:
     """
@@ -789,7 +928,15 @@ class MassGrid:
     Methods:
     find_bin
     get_sum_bins
+    to_netcdf
+
+    Class methods:
+    from_netcdf
     """
+
+    mass_grid_type_str_len = 32
+    """Length of mass_grid_type string on file."""
+
     def find_bin(self, lx):
         """Find the index of the bin containing the given mass value.
 
@@ -952,6 +1099,21 @@ class MassGrid:
                     - np.exp(exponent * log_thresh) / exponent
         return weight_vector
 
+    def to_netcdf(self, netcdf_file):
+        raise NotImplementedError
+
+    @classmethod
+    def from_netcdf(self, netcdf_file, constants):
+        """Retrieve a MassGrid object from a NetcdfFile."""
+        mass_grid_type = netcdf_file.read_characters('mass_grid_type')
+        if mass_grid_type == 'Geometric':
+            d_min = netcdf_file.read_scalar('d_min')
+            d_max = netcdf_file.read_scalar('d_max')
+            num_bins = netcdf_file.read_dimension('num_bins')
+            return GeometricMassGrid(constants, d_min, d_max, num_bins)
+        else:
+            assert False, "unrecognized mass_grid_type in file"
+
 
 class GeometricMassGrid(MassGrid):
     """
@@ -981,6 +1143,22 @@ class GeometricMassGrid(MassGrid):
         self.bin_bounds_d = constants.scaled_mass_to_diameter(bin_bounds_m)
         self.bin_widths = self.bin_bounds[1:] - self.bin_bounds[:-1]
 
+    def to_netcdf(self, netcdf_file):
+        """Write internal state to netCDF file."""
+        netcdf_file.write_dimension('mass_grid_type_str_len',
+                                    self.mass_grid_type_str_len)
+        netcdf_file.write_characters('mass_grid_type',
+                                     'Geometric',
+                                     'mass_grid_type_str_len',
+                                     'Type of mass grid')
+        netcdf_file.write_scalar('d_min', self.d_min,
+            'f8', 'm',
+            'Smallest diameter particle in mass grid')
+        netcdf_file.write_scalar('d_max', self.d_max,
+            'f8', 'm',
+            'Largest diameter particle in mass grid')
+        netcdf_file.write_dimension('num_bins', self.num_bins)
+
 
 class KernelTensor():
     """
@@ -993,6 +1171,7 @@ class KernelTensor():
                           that are created larger than the largest bin size
                           "fall out" of the box. If 'closed', these particles
                           are placed in the largest bin. Defaults to 'open'.
+    data (optional) - Precalculated kernel tensor data.
 
     Attributes:
     grid - Stored reference to corresponding grid.
@@ -1005,8 +1184,17 @@ class KernelTensor():
 
     Methods:
     calc_rate
+    to_netcdf
+
+    Class Methods:
+    from_netcdf
     """
-    def __init__(self, kernel, grid, boundary=None):
+
+    boundary_str_len = 16
+    """Length of string specifying boundary condition for largest bin."""
+
+    def __init__(self, kernel, grid, boundary=None, data=None):
+        self.kernel = kernel
         self.grid = grid
         self.const = grid.constants
         self.scaling = self.const.std_mass \
@@ -1021,6 +1209,9 @@ class KernelTensor():
         self.max_num = max_num
         nb = grid.num_bins
         bb = grid.bin_bounds
+        if data is not None:
+            self.data = data
+            return
         self.data = np.zeros((nb, nb, max_num))
         if boundary == 'closed':
             high_bin = nb - 1
@@ -1109,6 +1300,42 @@ class KernelTensor():
             return output, rate_deriv
         else:
             return output
+
+    def to_netcdf(self, netcdf_file):
+        netcdf_file.write_dimension('boundary_str_len',
+                                    self.boundary_str_len)
+        netcdf_file.write_characters('boundary', self.boundary,
+                                     'boundary_str_len',
+                                     'Largest bin boundary condition')
+        netcdf_file.write_dimension('kernel_sparsity_dim', self.max_num)
+        netcdf_file.write_array('kernel_tensor_data', self.data,
+            'f8', ('num_bins', 'num_bins', 'kernel_sparsity_dim'), '1',
+            'Nondimensionalized kernel tensor data')
+
+    @classmethod
+    def from_netcdf(cls, netcdf_file, kernel, grid):
+        boundary = netcdf_file.read_characters('boundary')
+        data = netcdf_file.read_array('kernel_tensor_data')
+        return KernelTensor(kernel, grid, boundary=boundary, data=data)
+
+
+class LogTransform:
+    """
+    Transform a variable using the natural logarithm.
+
+    Methods:
+    transform
+    derivative
+    second_over_first_derivative
+    """
+    def transform(self, x):
+        return np.log(x)
+
+    def derivative(self, x):
+        return 1./x
+
+    def second_over_first_derivative(self, x):
+        return -1./x
 
 
 class ModelStateDescriptor:
@@ -1432,9 +1659,7 @@ class ModelState:
 
     Initialization arguments:
     desc - The ModelStateDescriptor object corresponding to this object.
-    dsd - A 1-D vector representing the mass-weighted drop size distribution.
-          This should define the amount of 3rd moment with respect to diameter
-          in each bin, using units consistent with the constants object.
+    raw - A 1-D vector containing raw state data.
 
     Attributes:
     constants - ModelConstants object used by this model.
@@ -1814,20 +2039,112 @@ class RK45Integrator:
         return times * tscale, states
 
 
-class LogTransform:
+class Experiment:
     """
-    Transform a variable using the natural logarithm.
+    Collect all data produced by a particular model integration.
 
-    Methods:
-    transform
-    derivative
-    second_over_first_derivative
+    Initialization arguments:
+    desc - The ModelStateDescriptor.
+    ktens - Kernel tensor used to perform an integration.
+    times - Times at which snapshot data is output.
+    raws - A 2-D array of raw state vectors, where the first dimension is the
+           number of output times and the second dimension is the length of the
+           state vector for each time.
     """
-    def transform(self, x):
-        return np.log(x)
+    def __init__(self, desc, ktens, times, raws):
+        self.constants = desc.constants
+        self.mass_grid = desc.mass_grid
+        self.desc = desc
+        self.kernel = ktens.kernel
+        self.ktens = ktens
+        self.times = times
+        self.num_time_steps = len(times)
+        self.raws = raws
+        self.states = [ModelState(self.desc, raws[i,:])
+                       for i in range(self.num_time_steps)]
 
-    def derivative(self, x):
-        return 1./x
 
-    def second_over_first_derivative(self, x):
-        return -1./x
+class NetcdfFile:
+    """
+    Read/write model objects from/to a netCDF file.
+
+    Initialization arguments:
+    dataset - netCDF4 Dataset pointing to the file.
+    """
+    def __init__(self, dataset):
+        self.nc = dataset
+
+    def write_scalar(self, name, value, dtype, units, description):
+        var = self.nc.createVariable(name, dtype)
+        var.units = units
+        var.description = description
+        var[...] = value
+
+    def read_scalar(self, name):
+        return self.nc[name][...]
+
+    def write_dimension(self, name, length):
+        self.nc.createDimension(name, length)
+
+    def read_dimension(self, name):
+        return len(self.nc.dimensions[name])
+
+    def write_characters(self, name, value, dim_name, description):
+        dim_len = self.read_dimension(dim_name)
+        assert dim_len >= len(value), \
+            "cannot write all characters provided, dimension too short"
+        var = self.nc.createVariable(name, 'S1', (dim_name))
+        var.description = description
+        var[:] = nc4.stringtochar(np.array([value], 'S{}'.format(dim_len)))
+
+    def read_characters(self, name):
+        return str(nc4.chartostring(self.nc[name][:]))
+
+    def write_array(self, name, value, dtype, dims, units, description):
+        assert value.shape == \
+            tuple([self.read_dimension(dim) for dim in dims]), \
+            "value shape does not match dimensions we were given to write to"
+        var = self.nc.createVariable(name, dtype, dims)
+        var.units = units
+        var.description = description
+        var[...] = value
+
+    def read_array(self, name):
+        return self.nc[name][...]
+
+    def write_constants(self, constants):
+        constants.to_netcdf(self)
+
+    def read_constants(self):
+        return ModelConstants.from_netcdf(self)
+
+    def write_kernel(self, kernel):
+        kernel.to_netcdf(self)
+
+    def read_kernel(self, constants):
+        return Kernel.from_netcdf(self, constants)
+
+    def write_mass_grid(self, mass_grid):
+        mass_grid.to_netcdf(self)
+
+    def read_mass_grid(self, constants):
+        return MassGrid.from_netcdf(self, constants)
+
+    def write_kernel_tensor(self, ktens):
+        ktens.to_netcdf(self)
+
+    def read_kernel_tensor(self, kernel, grid):
+        return KernelTensor.from_netcdf(self, kernel, grid)
+
+    def write_cgk(self, ktens):
+        self.write_constants(ktens.grid.constants)
+        self.write_kernel(ktens.kernel)
+        self.write_mass_grid(ktens.grid)
+        self.write_kernel_tensor(ktens)
+
+    def read_cgk(self):
+        constants = self.read_constants()
+        kernel = self.read_kernel(constants)
+        grid = self.read_mass_grid(constants)
+        ktens = self.read_kernel_tensor(kernel, grid)
+        return constants, kernel, grid, ktens

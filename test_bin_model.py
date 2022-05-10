@@ -528,10 +528,26 @@ class TestLongKernel(unittest.TestCase):
     def test_fail_if_two_kcs(self):
         with self.assertRaises(AssertionError):
             LongKernel(self.constants, kc_cgs=1., kc_si=1.)
+        with self.assertRaises(AssertionError):
+            LongKernel(self.constants, kc_cgs=1., kc=1.)
+        with self.assertRaises(AssertionError):
+            LongKernel(self.constants, kc=1., kc_si=1.)
 
     def test_fail_if_two_krs(self):
         with self.assertRaises(AssertionError):
             LongKernel(self.constants, kr_cgs=1., kr_si=1.)
+        with self.assertRaises(AssertionError):
+            LongKernel(self.constants, kr_cgs=1., kr=1.)
+        with self.assertRaises(AssertionError):
+            LongKernel(self.constants, kr=1., kr_si=1.)
+
+    def test_kc(self):
+        kernel = LongKernel(self.constants, kc=3.)
+        self.assertEqual(kernel.kc, 3.)
+
+    def test_kr(self):
+        kernel = LongKernel(self.constants, kr=3.)
+        self.assertEqual(kernel.kr, 3.)
 
     def test_kc_cgs(self):
         kernel = LongKernel(self.constants, kc_cgs=3.)
@@ -3709,6 +3725,13 @@ class TestBeardV(unittest.TestCase):
         self.assertAlmostEqual(beard_v(const, 2.e-3),
                                6.5141471)
 
+    def test_very_high_beard_v(self):
+        const = self.constants
+        self.assertAlmostEqual(beard_v(const, 7.e-3),
+                               beard_v(const, 7.001e-3))
+        self.assertAlmostEqual(beard_v(const, 7.e-3),
+                               beard_v(const, 8.e-3))
+
 
 class TestSCEfficiency(unittest.TestCase):
     """
@@ -3744,7 +3767,11 @@ class TestHallKernel(unittest.TestCase):
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
-        self.kernel = HallKernel(self.constants, sc_efficiency)
+        self.kernel = HallKernel(self.constants, 'ScottChen')
+
+    def test_bad_efficiency_string_raises_error(self):
+        with self.assertRaises(AssertionError):
+            HallKernel(self.constants, 'nonsense')
 
     def test_kernel_d(self):
         const = self.constants
@@ -3800,3 +3827,257 @@ class TestHallKernel(unittest.TestCase):
         lx2 = lx1 + 1.e-14
         actual = self.kernel.kernel_integral(-1., 0., lx1, lx2, btype=0)
         self.assertEqual(actual, 0.)
+
+
+class TestExperiment(unittest.TestCase):
+    """
+    Test Experiment methods.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3,
+                                        time_scale=400.)
+        nb = 30
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=nb)
+        self.kernel = LongKernel(self.constants)
+        self.ktens = KernelTensor(self.kernel, self.grid)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        self.desc = ModelStateDescriptor(self.constants,
+                                         self.grid,
+                                         dsd_deriv_names=dsd_deriv_names,
+                                         dsd_deriv_scales=dsd_deriv_scales)
+        nu = 5.
+        lam = nu / 1.e-4
+        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        self.state = ModelState(self.desc, self.raw)
+        nu2 = 0.
+        lam = nu / 5.e-5
+        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        self.raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        self.state2 = ModelState(self.desc, self.raw2)
+        self.times = np.array([0., 1.])
+
+    def test_init(self):
+        times = self.times
+        ntimes = len(times)
+        raws = np.zeros((ntimes, len(self.state.raw)))
+        raws[0,:] = self.state.raw
+        raws[1,:] = self.state2.raw
+        states = [self.state, self.state2]
+        exp = Experiment(self.desc, self.ktens, times, raws)
+        self.assertEqual(exp.constants.rho_air, self.constants.rho_air)
+        self.assertEqual(exp.mass_grid.num_bins, self.grid.num_bins)
+        self.assertEqual(exp.kernel.kc, self.kernel.kc)
+        self.assertEqual(exp.ktens.data.shape, self.ktens.data.shape)
+        self.assertTrue(np.all(exp.ktens.data == self.ktens.data))
+        self.assertEqual(exp.times.shape, (ntimes,))
+        self.assertEqual(len(exp.states), ntimes)
+        for i in range(ntimes):
+            self.assertEqual(exp.states[i].dsd_moment(0),
+                             states[i].dsd_moment(0))
+        self.assertEqual(exp.desc.dsd_deriv_num, 2)
+        self.assertEqual(exp.num_time_steps, ntimes)
+
+
+class TestNetcdfFile(unittest.TestCase):
+    """
+    Test NetcdfFile methods.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3,
+                                        time_scale=400.)
+        nb = 30
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=nb)
+        self.kernel = LongKernel(self.constants)
+        self.ktens = KernelTensor(self.kernel, self.grid)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        self.desc = ModelStateDescriptor(self.constants,
+                                         self.grid,
+                                         dsd_deriv_names=dsd_deriv_names,
+                                         dsd_deriv_scales=dsd_deriv_scales)
+        nu = 5.
+        lam = nu / 1.e-4
+        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        self.state = ModelState(self.desc, self.raw)
+        nu2 = 0.
+        lam = nu / 5.e-5
+        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        raws = np.zeros((2, len(self.raw)))
+        raws[0,:] = self.raw
+        raws[1,:] = raw2
+        self.times = np.array([0., 1.])
+        self.exp = Experiment(self.desc, self.ktens, self.times, raws)
+        self.dataset = nc4.Dataset('test.nc', 'w', diskless=True)
+        self.NetcdfFile = NetcdfFile(self.dataset)
+
+    def tearDown(self):
+        self.dataset.close()
+
+    def test_read_write_scalar(self):
+        x = 25.
+        self.NetcdfFile.write_scalar('x', x, 'f8', '1',
+                                     'A description')
+        actual = self.NetcdfFile.read_scalar('x')
+        self.assertEqual(actual, x)
+
+    def test_read_write_dimension(self):
+        dim = 20
+        self.NetcdfFile.write_dimension('dim', dim)
+        actual = self.NetcdfFile.read_dimension('dim')
+        self.assertEqual(actual, dim)
+
+    def test_read_write_characters(self):
+        self.NetcdfFile.write_dimension('string_len', 16)
+        string = "Hi there!"
+        self.NetcdfFile.write_characters('string', string, 'string_len',
+                                         'A description')
+        actual = self.NetcdfFile.read_characters('string')
+        self.assertEqual(actual, string)
+
+    def test_read_write_too_many_characters_raises(self):
+        self.NetcdfFile.write_dimension('string_len', 2)
+        string = "Hi there!"
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.write_characters('string', string, 'string_len',
+                                             'A description')
+
+    def test_read_write_array(self):
+        dim = 5
+        self.NetcdfFile.write_dimension('dim', dim)
+        array = np.linspace(0., dim-1., dim)
+        self.NetcdfFile.write_array('array', array,
+            'f8', ['dim'], '1', 'A description')
+        array2 = self.NetcdfFile.read_array('array')
+        self.assertEqual(array2.shape, array.shape)
+        for i in range(dim):
+            self.assertEqual(array2[i], array[i])
+
+    def test_write_array_raises_for_wrong_dimension(self):
+        dim = 5
+        self.NetcdfFile.write_dimension('dim', dim)
+        array = np.linspace(0., dim-1., dim+1)
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.write_array('array', array,
+                'f8', ['dim'], '1', 'A description')
+
+    def test_constants_io(self):
+        const = self.constants
+        self.NetcdfFile.write_constants(const)
+        const2 = self.NetcdfFile.read_constants()
+        self.assertEqual(const.rho_water, const2.rho_water)
+        self.assertEqual(const.rho_air, const2.rho_air)
+        self.assertEqual(const.std_diameter, const2.std_diameter)
+        self.assertEqual(const.rain_d, const2.rain_d)
+        self.assertEqual(const.mass_conc_scale, const2.mass_conc_scale)
+        self.assertEqual(const.time_scale, const2.time_scale)
+
+    def test_long_kernel_io(self):
+        kernel = self.kernel
+        self.NetcdfFile.write_kernel(kernel)
+        kernel2 = self.NetcdfFile.read_kernel(self.constants)
+        self.assertEqual(kernel.kc, kernel2.kc)
+        self.assertEqual(kernel.kr, kernel2.kr)
+        self.assertEqual(kernel.log_rain_m, kernel2.log_rain_m)
+
+    def test_hall_kernel_io(self):
+        kernel = HallKernel(self.constants, 'ScottChen')
+        self.NetcdfFile.write_kernel(kernel)
+        kernel2 = self.NetcdfFile.read_kernel(self.constants)
+        self.assertEqual(kernel.efficiency_name, kernel2.efficiency_name)
+
+    def test_kernel_to_netcdf_not_implemented(self):
+        kernel = Kernel()
+        with self.assertRaises(NotImplementedError):
+            self.NetcdfFile.write_kernel(kernel)
+
+    def test_bad_kernel_type_raises(self):
+        self.NetcdfFile.write_dimension('kernel_type_str_len',
+                                        Kernel.kernel_type_str_len)
+        self.NetcdfFile.write_characters('kernel_type',
+                                         'nonsense',
+                                         'kernel_type_str_len',
+                                         'Type of kernel')
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.read_kernel(self.constants)
+
+    def test_mass_grid_io(self):
+        grid = self.grid
+        self.NetcdfFile.write_mass_grid(grid)
+        grid2 = self.NetcdfFile.read_mass_grid(self.constants)
+        self.assertEqual(grid.d_min, grid2.d_min)
+        self.assertEqual(grid.d_max, grid2.d_max)
+        self.assertEqual(grid.num_bins, grid2.num_bins)
+
+    def test_grid_to_netcdf_not_implemented(self):
+        grid = MassGrid()
+        with self.assertRaises(NotImplementedError):
+            self.NetcdfFile.write_mass_grid(grid)
+
+    def test_bad_grid_type_raises(self):
+        self.NetcdfFile.write_dimension('mass_grid_type_str_len',
+                                        MassGrid.mass_grid_type_str_len)
+        self.NetcdfFile.write_characters('mass_grid_type',
+                                         'nonsense',
+                                         'mass_grid_type_str_len',
+                                         'Type of mass grid')
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.read_mass_grid(self.constants)
+
+    def test_ktens_io(self):
+        ktens = self.ktens
+        self.NetcdfFile.write_mass_grid(self.grid)
+        self.NetcdfFile.write_kernel_tensor(ktens)
+        ktens2 = self.NetcdfFile.read_kernel_tensor(self.kernel, self.grid)
+        self.assertEqual(ktens2.boundary, ktens.boundary)
+        self.assertEqual(ktens2.data.shape, ktens.data.shape)
+        scale = ktens.data.max()
+        for i in range(len(ktens.data.flat)):
+            self.assertAlmostEqual(ktens2.data.flat[i] / scale,
+                                   ktens.data.flat[i] / scale)
+
+    def test_cgk_io(self):
+        const = self.constants
+        kernel = self.kernel
+        grid = self.grid
+        ktens = self.ktens
+        self.NetcdfFile.write_cgk(ktens)
+        const2, kernel2, grid2, ktens2 = self.NetcdfFile.read_cgk()
+        self.assertEqual(const2.rho_water, const.rho_water)
+        self.assertEqual(kernel2.kc, kernel.kc)
+        self.assertEqual(grid2.d_min, grid.d_min)
+        self.assertEqual(ktens2.data.shape, ktens.data.shape)
+        scale = ktens.data.max()
+        for i in range(len(ktens.data.flat)):
+            self.assertAlmostEqual(ktens2.data.flat[i] / scale,
+                                   ktens.data.flat[i] / scale)
