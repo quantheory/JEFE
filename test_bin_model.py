@@ -3687,6 +3687,31 @@ class TestRK45Integrator(unittest.TestCase):
                 self.assertAlmostEqual(actual_dsd[j]/scale,
                                        expected_dsd[j]/scale)
 
+class TestTransform(unittest.TestCase):
+    """
+    Test Transform methods.
+    """
+    def test_transform(self):
+        with self.assertRaises(NotImplementedError):
+            Transform().transform(2.)
+
+    def test_derivative(self):
+        with self.assertRaises(NotImplementedError):
+            Transform().derivative(2.)
+
+    def test_second_over_first_derivative(self):
+        with self.assertRaises(NotImplementedError):
+            Transform().second_over_first_derivative(2.)
+
+    def test_type_string(self):
+        with self.assertRaises(NotImplementedError):
+            Transform().type_string()
+
+    def test_get_parameters(self):
+        with self.assertRaises(NotImplementedError):
+            Transform().get_parameters()
+
+
 class TestLogTransform(unittest.TestCase):
     """
     Test LogTransform methods.
@@ -3700,6 +3725,12 @@ class TestLogTransform(unittest.TestCase):
     def test_log_transform_second_over_first_derivative(self):
         self.assertEqual(LogTransform().second_over_first_derivative(2.),
                          -1./2.)
+
+    def test_type_string(self):
+        self.assertEqual(LogTransform().type_string(), 'Log')
+
+    def test_get_parameters(self):
+        self.assertEqual(LogTransform().get_parameters(), [])
 
 
 class TestBeardV(unittest.TestCase):

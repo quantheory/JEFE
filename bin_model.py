@@ -1324,6 +1324,20 @@ class Transform:
     """
     Represent a transformation of a prognostic variable.
     """
+    def transform(self, x):
+        raise NotImplementedError
+
+    def derivative(self, x):
+        raise NotImplementedError
+
+    def second_over_first_derivative(self, x):
+        raise NotImplementedError
+
+    def type_string(self):
+        raise NotImplementedError
+
+    def get_parameters(self):
+        raise NotImplementedError
 
 
 class LogTransform(Transform):
@@ -1346,6 +1360,12 @@ class LogTransform(Transform):
     def second_over_first_derivative(self, x):
         """Calculate the second derivative divided by the first."""
         return -1./x
+
+    def type_string(self):
+        return "Log"
+
+    def get_parameters(self):
+        return []
 
 
 class ModelStateDescriptor:
