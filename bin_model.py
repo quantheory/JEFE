@@ -15,6 +15,7 @@ LongKernel
 MassGrid
 GeometricMassGrid
 KernelTensor
+Transform
 LogTransform
 ModelStateDescriptor
 ModelState
@@ -1319,9 +1320,15 @@ class KernelTensor():
         return KernelTensor(kernel, grid, boundary=boundary, data=data)
 
 
-class LogTransform:
+class Transform:
     """
-    Transform a variable using the natural logarithm.
+    Represent a transformation of a prognostic variable.
+    """
+
+
+class LogTransform(Transform):
+    """
+    Transform a prognostic variable using the natural logarithm.
 
     Methods:
     transform
@@ -1329,12 +1336,15 @@ class LogTransform:
     second_over_first_derivative
     """
     def transform(self, x):
+        """Transform the variable."""
         return np.log(x)
 
     def derivative(self, x):
+        """Calculate the first derivative of the transformation."""
         return 1./x
 
     def second_over_first_derivative(self, x):
+        """Calculate the second derivative divided by the first."""
         return -1./x
 
 
@@ -1352,6 +1362,12 @@ class ModelStateDescriptor:
     dsd_deriv_scales (optional) - List of scales for the derivatives of the
                                   named variable. These scales will be applied
                                   in addition to dsd_scale. They default to 1.
+    perturbed_variables (optional) - A list of tuples, with each tuple
+        containing a weight vector, a transform, and a scale, in that order.
+    perturbation_rate (optional) - A covariance matrix representing the error
+        introduced to the perturbed variables per second.
+    correction_time (optional) - Time scale over which the error covariance is
+        nudged toward a corrected value.
 
     Attributes:
     constants - ModelConstants object used by this model.
@@ -1362,10 +1378,6 @@ class ModelStateDescriptor:
     dsd_deriv_names - Names of variables with tracked derivatives.
     dsd_deriv_scales - Scales of variables with tracked derivatives.
                        These scales are applied on top of the dsd_scale.
-    perturbed_variables - A list of tuples, with each tuple containing a weight
-        vector, a transform, and a scale, in that order.
-    perturbation_rate - A covariance matrix representing the error introduced
-        to the perturbed variables per second.
 
     Methods:
     state_len
