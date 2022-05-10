@@ -2176,7 +2176,15 @@ class Integrator:
     Methods:
     integrate_raw
     integrate
+    to_netcdf
+
+    Class methods:
+    from_netcdf
     """
+
+    integrator_type_str_len = 64
+    """Length of integrator_type string on file."""
+
     def integrate_raw(self, t_len, state, proc_tens):
         """Integrate the state and return raw state data.
 
@@ -2229,6 +2237,24 @@ class Integrator:
         return Experiment(desc, proc_tens, self, times, raws,
                           ddsddt=ddsddt, zeta_cov=zeta_cov)
 
+    def to_netcdf(self, netcdf_file):
+        """Write Integrator to netCDF file."""
+        raise NotImplementedError
+
+    @classmethod
+    def from_netcdf(self, netcdf_file, constants):
+        """Read Integrator from netCDF file.
+
+        Arguments:
+        constants - The ModelConstants object.
+        """
+        integrator_type = netcdf_file.read_characters("integrator_type")
+        if integrator_type == "RK45":
+            dt = netcdf_file.read_scalar("dt")
+            return RK45Integrator(constants, dt)
+        else:
+            assert False, "integrator_type on file not recognized"
+
 
 class RK45Integrator(Integrator):
     """
@@ -2240,11 +2266,11 @@ class RK45Integrator(Integrator):
 
     Methods:
     integrate_raw
-    integrate
     """
     def __init__(self, constants, dt):
         self.constants = constants
-        self.dt = dt / constants.time_scale
+        self.dt = dt
+        self.dt_raw = dt / constants.time_scale
 
     def integrate_raw(self, t_len, state, proc_tens):
         """Integrate the state and return raw state data.
@@ -2259,7 +2285,7 @@ class RK45Integrator(Integrator):
         which the output is provided, and raws is an array for which each row
         is the raw state vector at a different time.
         """
-        dt = self.dt
+        dt = self.dt_raw
         tol = dt * 1.e-10
         num_step = int(t_len / dt)
         if t_len - (num_step * dt) > tol:
@@ -2272,6 +2298,17 @@ class RK45Integrator(Integrator):
                              method='RK45', t_eval=times, max_step=self.dt)
         output = np.transpose(solbunch.y)
         return times, output
+
+    def to_netcdf(self, netcdf_file):
+        """Write Integrator to netCDF file."""
+        netcdf_file.write_dimension("integrator_type_str_len",
+                                    self.integrator_type_str_len)
+        netcdf_file.write_characters("integrator_type", "RK45",
+                                     "integrator_type_str_len",
+                                     "Type of time integration used")
+        netcdf_file.write_scalar("dt", self.dt,
+                                 "f8", "s",
+                                 "Maximum time step used by integrator")
 
 
 class Experiment:
@@ -2294,6 +2331,12 @@ class Experiment:
 
     Attributes:
     num_time_steps - Number of time steps in integration.
+
+    Methods:
+    to_netcdf
+
+    Class methods:
+    from_netcdf
     """
     def __init__(self, desc, proc_tens, integrator, times, raws,
                  ddsddt=None, zeta_cov=None):
@@ -2310,6 +2353,51 @@ class Experiment:
         self.ddsddt = ddsddt
         self.zeta_cov = zeta_cov
 
+    def to_netcdf(self, netcdf_file):
+        """Write Experiment to netCDF file."""
+        netcdf_file.write_dimension('time', self.num_time_steps)
+        netcdf_file.write_array("time", self.times,
+            "f8", ['time'], "s",
+            "Model time elapsed since start of integration")
+        netcdf_file.write_dimension('raw_state_len', self.raws.shape[1])
+        netcdf_file.write_array("raw_state_data", self.raws,
+            "f8", ['time', 'raw_state_len'], "1",
+            "Raw, unstructured, nondimensionalized model state information")
+        if self.ddsddt is not None:
+            netcdf_file.write_array("ddsddt", self.ddsddt,
+                "f8", ['time', 'num_bins'], "1",
+                "Nondimensionalized time derivative of DSD")
+        if self.zeta_cov is not None:
+            netcdf_file.write_dimension("dsd_deriv_num+1",
+                                        self.desc.dsd_deriv_num+1)
+            netcdf_file.write_array("zeta_cov", self.zeta_cov,
+                "f8", ['time', 'dsd_deriv_num+1', 'dsd_deriv_num+1'], "1",
+                "Nondimensionalized error covariance of dsd_deriv variables "
+                "and time given the perturbed variable covariance in the "
+                "corresponding state")
+
+    @classmethod
+    def from_netcdf(self, netcdf_file, desc, proc_tens, integrator):
+        """Read Experiment from netCDF file.
+
+        Arguments:
+        desc - ModelStateDescriptor object used to construct Experiment.
+        proc_tens - Process tensor list used to construct Experiment.
+        integrator - Integrator used to construct Experiment.
+        """
+        times = netcdf_file.read_array("time")
+        raws = netcdf_file.read_array("raw_state_data")
+        if netcdf_file.variable_is_present("ddsddt"):
+            ddsddt = netcdf_file.read_array("ddsddt")
+        else:
+            ddsddt = None
+        if netcdf_file.variable_is_present("zeta_cov"):
+            zeta_cov = netcdf_file.read_array("zeta_cov")
+        else:
+            zeta_cov = None
+        return Experiment(desc, proc_tens, integrator, times, raws,
+                          ddsddt=ddsddt, zeta_cov=zeta_cov)
+
 
 class NetcdfFile:
     """
@@ -2319,6 +2407,7 @@ class NetcdfFile:
     dataset - netCDF4 Dataset corresponding to the file open for I/O.
 
     Methods:
+    variable_is_present
     write_scalar
     read_scalar
     write_dimension
@@ -2339,9 +2428,19 @@ class NetcdfFile:
     read_cgk
     write_descriptor
     read_descriptor
+    write_integrator
+    read_integrator
+    write_experiment
+    read_experiment
+    write_full_experiment
+    read_full_experiment
     """
     def __init__(self, dataset):
         self.nc = dataset
+
+    def variable_is_present(self, name):
+        """Test if a variable with the given name is present on the file."""
+        return name in self.nc.variables
 
     def write_scalar(self, name, value, dtype, units, description):
         """Write a scalar to a netCDF file.
@@ -2537,3 +2636,66 @@ class NetcdfFile:
         mass_grid - MassGrid object to use in constructing the descriptor.
         """
         return ModelStateDescriptor.from_netcdf(self, constants, mass_grid)
+
+    def write_integrator(self, integrator):
+        """Write Integrator to netCDF file."""
+        integrator.to_netcdf(self)
+
+    def read_integrator(self, constants):
+        """Read Integrator from netCDF file.
+
+        Arguments:
+        constants - ModelConstants object to use in constructing the
+                    integrator.
+        """
+        return Integrator.from_netcdf(self, constants)
+
+    def write_experiment(self, exp):
+        """Write Experiment to netCDF file."""
+        exp.to_netcdf(self)
+
+    def read_experiment(self, desc, proc_tens, integrator):
+        """Read Experiment from netCDF file.
+
+        Arguments:
+        desc - ModelStateDescriptor object used to construct Experiment.
+        proc_tens - Process tensor list used to construct Experiment.
+        integrator - Integrator used to construct Experiment.
+        """
+        return Experiment.from_netcdf(self, desc, proc_tens, integrator)
+
+    def write_full_experiment(self, exp, proc_tens_files):
+        """Write experiment with all data to netCDF file.
+
+        Arguments:
+        exp - The Experiment to write.
+        proc_tens_files - A list of strings containing the location of files
+                          with process tensor data.
+        """
+        nfile = len(proc_tens_files)
+        self.write_dimension('proc_tens_file_num', nfile)
+        max_len = 0
+        for i in range(nfile):
+            max_len = max(max_len, len(proc_tens_files[i]))
+        self.write_dimension('proc_tens_file_str_len', max_len)
+        self.write_characters('proc_tens_files', proc_tens_files,
+            ['proc_tens_file_num', 'proc_tens_file_str_len'],
+            "Files containing process tensors used in integration")
+        desc = exp.desc
+        self.write_constants(desc.constants)
+        self.write_mass_grid(desc.mass_grid)
+        self.write_descriptor(desc)
+        self.write_integrator(exp.integrator)
+        exp.to_netcdf(self)
+
+    def read_full_experiment(self, proc_tens):
+        """Read all experiment data except process tensors from netCDF file.
+
+        Arguments:
+        proc_tens - Process tensor list used to construct Experiment.
+        """
+        const = self.read_constants()
+        grid = self.read_mass_grid(const)
+        desc = self.read_descriptor(const, grid)
+        integrator = self.read_integrator(const)
+        return self.read_experiment(desc, proc_tens, integrator)

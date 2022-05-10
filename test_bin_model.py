@@ -3666,6 +3666,10 @@ class TestIntegrator(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             Integrator().integrate_raw(1., 2., 3.)
 
+    def test_to_netcdf_raises_not_implemented(self):
+        with self.assertRaises(NotImplementedError):
+            Integrator().to_netcdf(None)
+
 
 class TestRK45Integrator(unittest.TestCase):
     """
@@ -4195,6 +4199,13 @@ class TestNetcdfFile(unittest.TestCase):
     def tearDown(self):
         self.dataset.close()
 
+    def test_variable_is_present(self):
+        x = 25.
+        self.NetcdfFile.write_scalar('x', x, 'f8', '1',
+                                     'A description')
+        self.assertTrue(self.NetcdfFile.variable_is_present('x'))
+        self.assertFalse(self.NetcdfFile.variable_is_present('y'))
+
     def test_read_write_scalar(self):
         x = 25.
         self.NetcdfFile.write_scalar('x', x, 'f8', '1',
@@ -4501,3 +4512,85 @@ class TestNetcdfFile(unittest.TestCase):
                 self.assertEqual(desc2.perturbation_rate[i,j],
                                  desc.perturbation_rate[i,j])
         self.assertEqual(desc2.correction_time, desc.correction_time)
+
+    def test_integrator_io(self):
+        const = self.constants
+        integrator = self.integrator
+        self.NetcdfFile.write_integrator(integrator)
+        integrator2 = self.NetcdfFile.read_integrator(const)
+        self.assertIsInstance(integrator2, RK45Integrator)
+        self.assertEqual(integrator.dt, integrator2.dt)
+
+    def test_bad_integrator_type_raises(self):
+        const = self.constants
+        integrator = self.integrator
+        self.NetcdfFile.write_integrator(integrator)
+        itsl = self.NetcdfFile.read_dimension("integrator_type_str_len")
+        self.NetcdfFile.nc['integrator_type'][:] = \
+            nc4.stringtochar(np.array(['nonsense'], 'S{}'.format(itsl)))
+        with self.assertRaises(AssertionError):
+            integrator2 = self.NetcdfFile.read_integrator(const)
+
+    def test_simple_experiment_io(self):
+        desc = self.desc
+        ktens = self.ktens
+        integrator = self.integrator
+        exp = self.exp
+        self.NetcdfFile.write_experiment(exp)
+        exp2 = self.NetcdfFile.read_experiment(desc, [ktens], integrator)
+        num_step = len(exp.times) - 1
+        self.assertEqual(len(exp2.times), num_step+1)
+        for i in range(num_step+1):
+            self.assertEqual(exp2.times[i], exp.times[i])
+        self.assertEqual(exp2.raws.shape, exp.raws.shape)
+        for i in range(len(exp.raws.flat)):
+            self.assertEqual(exp2.raws.flat[i], exp.raws.flat[i])
+        self.assertIsNone(exp2.ddsddt)
+        self.assertIsNone(exp2.zeta_cov)
+
+    def test_complex_experiment_io(self):
+        const = self.constants
+        grid = self.grid
+        desc = self.desc
+        ktens = self.ktens
+        integrator = self.integrator
+        self.NetcdfFile.write_constants(const)
+        self.NetcdfFile.write_mass_grid(grid)
+        exp = integrator.integrate(integrator.dt*2., self.state, [ktens])
+        self.NetcdfFile.write_experiment(exp)
+        exp2 = self.NetcdfFile.read_experiment(desc, [ktens], integrator)
+        num_step = len(exp.times) - 1
+        self.assertEqual(len(exp2.times), num_step+1)
+        for i in range(num_step+1):
+            self.assertEqual(exp2.times[i], exp.times[i])
+        self.assertEqual(exp2.raws.shape, exp.raws.shape)
+        for i in range(len(exp.raws.flat)):
+            self.assertEqual(exp2.raws.flat[i], exp.raws.flat[i])
+        self.assertEqual(exp2.ddsddt.shape, exp.ddsddt.shape)
+        scale = exp.ddsddt.max()
+        for i in range(len(exp.ddsddt.flat)):
+            self.assertAlmostEqual(exp2.ddsddt.flat[i] / scale,
+                                   exp.ddsddt.flat[i] / scale)
+        self.assertEqual(exp2.zeta_cov.shape, exp.zeta_cov.shape)
+        scale = exp.zeta_cov.max()
+        for i in range(len(exp.zeta_cov.flat)):
+            self.assertAlmostEqual(exp2.zeta_cov.flat[i] / scale,
+                                   exp.zeta_cov.flat[i] / scale)
+
+    def test_full_experiment_io(self):
+        const = self.constants
+        grid = self.grid
+        desc = self.desc
+        ktens = self.ktens
+        integrator = self.integrator
+        exp = integrator.integrate(integrator.dt*2., self.state, [ktens])
+        self.NetcdfFile.write_full_experiment(exp, ["k1.nc", "k2.nc"])
+        exp2 = self.NetcdfFile.read_full_experiment([ktens])
+        files = self.NetcdfFile.read_characters('proc_tens_files')
+        self.assertEqual(len(files), 2)
+        self.assertEqual(files[0], "k1.nc")
+        self.assertEqual(files[1], "k2.nc")
+        self.assertEqual(exp2.desc.perturb_num, exp.desc.perturb_num)
+        self.assertIs(exp2.proc_tens[0], ktens)
+        self.assertEqual(exp2.integrator.dt, exp.integrator.dt)
+        self.assertEqual(exp2.num_time_steps, exp.num_time_steps)
