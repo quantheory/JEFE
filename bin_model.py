@@ -1323,31 +1323,52 @@ class KernelTensor():
 class Transform:
     """
     Represent a transformation of a prognostic variable.
-    """
-    def transform(self, x):
-        raise NotImplementedError
-
-    def derivative(self, x):
-        raise NotImplementedError
-
-    def second_over_first_derivative(self, x):
-        raise NotImplementedError
-
-    def type_string(self):
-        raise NotImplementedError
-
-    def get_parameters(self):
-        raise NotImplementedError
-
-
-class LogTransform(Transform):
-    """
-    Transform a prognostic variable using the natural logarithm.
 
     Methods:
     transform
     derivative
     second_over_first_derivative
+    type_string
+    get_parameters
+
+    Class methods:
+    from_params
+    """
+
+    transform_type_str_len = 32
+    "Length of a transform type string on file."
+
+    def transform(self, x):
+        """Transform the variable."""
+        raise NotImplementedError
+
+    def derivative(self, x):
+        """Calculate the first derivative of the transformation."""
+        raise NotImplementedError
+
+    def second_over_first_derivative(self, x):
+        """Calculate the second derivative divided by the first."""
+        raise NotImplementedError
+
+    def type_string(self):
+        """Get string representing type of transform."""
+        raise NotImplementedError
+
+    def get_parameters(self):
+        """Get parameters of this transform as a list."""
+        raise NotImplementedError
+
+    @classmethod
+    def from_params(self, type_str, params):
+        if type_str == "Log":
+            return LogTransform()
+        else:
+            assert False, "transform type string not recognized"
+
+
+class LogTransform(Transform):
+    """
+    Transform a prognostic variable using the natural logarithm.
     """
     def transform(self, x):
         """Transform the variable."""
@@ -1362,9 +1383,11 @@ class LogTransform(Transform):
         return -1./x
 
     def type_string(self):
+        """Get string representing type of transform."""
         return "Log"
 
     def get_parameters(self):
+        """Get parameters of this transform as a list."""
         return []
 
 
@@ -1387,6 +1410,9 @@ class ModelStateDescriptor:
         introduced to the perturbed variables per second.
     correction_time (optional) - Time scale over which the error covariance is
         nudged toward a corrected value.
+    scale_inputs (optional) - Whether to scale the input variables. Default is
+                              True. Setting this to False is mainly intended
+                              for testing and I/O utility code.
 
     Attributes:
     constants - ModelConstants object used by this model.
@@ -1410,11 +1436,21 @@ class ModelStateDescriptor:
     dsd_deriv_raw
     fallout_deriv_raw
     perturb_cov_raw
+    to_netcdf
+
+    Class Methods:
+    from_netcdf
     """
+
+    dsd_deriv_name_str_len = 64
+    """Length of dsd derivative variable name strings on file."""
+
     def __init__(self, constants, mass_grid,
                  dsd_deriv_names=None, dsd_deriv_scales=None,
                  perturbed_variables=None, perturbation_rate=None,
-                 correction_time=None):
+                 correction_time=None, scale_inputs=None):
+        if scale_inputs is None:
+            scale_inputs = True
         self.constants = constants
         self.mass_grid = mass_grid
         if dsd_deriv_names is not None:
@@ -1426,7 +1462,8 @@ class ModelStateDescriptor:
                 dsd_deriv_scales = np.ones((self.dsd_deriv_num,))
             assert len(dsd_deriv_scales) == self.dsd_deriv_num, \
                 "dsd_deriv_scales length does not match dsd_deriv_names"
-            self.dsd_deriv_scales = dsd_deriv_scales
+            # Convert to array to allow user to specify a list here...
+            self.dsd_deriv_scales = np.array(dsd_deriv_scales)
         else:
             assert dsd_deriv_scales is None, \
                 "cannot specify dsd_deriv_scales without dsd_deriv_names"
@@ -1449,11 +1486,15 @@ class ModelStateDescriptor:
                     + str((pn, pn))
                 for i in range(pn):
                     for j in range(pn):
-                        self.perturbation_rate[i,j] = perturbation_rate[i,j] \
-                            / perturbed_variables[i][2] \
-                            / perturbed_variables[j][2] * constants.time_scale
+                        self.perturbation_rate[i,j] = perturbation_rate[i,j]
+                        if scale_inputs:
+                            self.perturbation_rate[i,j] *= constants.time_scale \
+                                / perturbed_variables[i][2] \
+                                / perturbed_variables[j][2]
             if correction_time is not None:
-                self.correction_time = correction_time / constants.time_scale
+                self.correction_time = correction_time
+                if scale_inputs:
+                    self.correction_time /= constants.time_scale
             else:
                 assert pn == self.dsd_deriv_num + 1, \
                     "must specify correction time unless perturb_num is " \
@@ -1681,6 +1722,91 @@ class ModelStateDescriptor:
         idx, num = self.perturb_cov_loc()
         pn = self.perturb_num
         return np.reshape(raw[idx:idx+num], (pn, pn))
+
+    def to_netcdf(self, netcdf_file):
+        netcdf_file.write_dimension("dsd_deriv_num", self.dsd_deriv_num)
+        netcdf_file.write_dimension("dsd_deriv_name_str_len",
+                                    self.dsd_deriv_name_str_len)
+        netcdf_file.write_characters("dsd_deriv_names", self.dsd_deriv_names,
+            ['dsd_deriv_num', 'dsd_deriv_name_str_len'],
+            "Names of variables with respect to which we evolve the "
+            "derivative of the drop size distribution")
+        netcdf_file.write_array("dsd_deriv_scales", self.dsd_deriv_scales,
+            "f8", ["dsd_deriv_num"], "1",
+            "Scaling factors used for nondimensionalization of drop size "
+            "distribution derivatives")
+        pn = self.perturb_num
+        netcdf_file.write_dimension("perturb_num", pn)
+        if pn == 0:
+            return
+        netcdf_file.write_array("perturb_wvs", self.perturb_wvs,
+            "f8", ["perturb_num", "num_bins"], "1",
+            "Weight vectors defining perturbed variables to evolve over time")
+        netcdf_file.write_dimension("transform_type_str_len",
+                                    Transform.transform_type_str_len)
+        transform_types = [t.type_string() for t in self.perturb_transforms]
+        transform_params = [t.get_parameters()
+                            for t in self.perturb_transforms]
+        netcdf_file.write_characters(
+            "perturb_transform_types", transform_types,
+            ["perturb_num", "transform_type_str_len"],
+            "Types of transforms used for perturbed variables")
+        max_param_num = 0
+        for params in transform_params:
+            max_param_num = max(max_param_num, len(params))
+        netcdf_file.write_dimension("max_transform_param_num",
+                                    max_param_num)
+        param_array = np.zeros((pn, max_param_num))
+        for i in range(pn):
+            params = transform_params[i]
+            for j in range(len(params)):
+                param_array[i,j] = params[j]
+        netcdf_file.write_array("transform_params", param_array,
+            "f8", ["perturb_num", "max_transform_param_num"], "1",
+            "Parameters for transforms for perturbed variables")
+        netcdf_file.write_array("perturb_scales", self.perturb_scales,
+            "f8", ["perturb_num"], "1",
+            "Scaling factors used for nondimensionalization of perturbed "
+            "variables")
+        netcdf_file.write_array("perturbation_rate", self.perturbation_rate,
+            "f8", ["perturb_num", "perturb_num"], "1",
+            "Matrix used to grow perturbation covariance over time")
+        netcdf_file.write_scalar("correction_time", self.correction_time,
+            "f8", "1",
+            "Nondimensionalized time scale for nudging error covariance "
+            "toward the manifold to which the true solution is confined")
+
+    @classmethod
+    def from_netcdf(cls, netcdf_file, constants, mass_grid):
+        dsd_deriv_names = netcdf_file.read_characters('dsd_deriv_names')
+        dsd_deriv_scales = netcdf_file.read_array('dsd_deriv_scales')
+        pn = netcdf_file.read_dimension("perturb_num")
+        if pn == 0:
+            return ModelStateDescriptor(constants, mass_grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    scale_inputs=False)
+        wvs = netcdf_file.read_array("perturb_wvs")
+        transform_types = \
+            netcdf_file.read_characters("perturb_transform_types")
+        transform_params = netcdf_file.read_array("transform_params")
+        transforms = [Transform.from_params(transform_types[i],
+                                            transform_params[i,:])
+                      for i in range(pn)]
+        perturb_scales = netcdf_file.read_array("perturb_scales")
+        perturbed_variables = []
+        for i in range(pn):
+            perturbed_variables.append((wvs[i,:], transforms[i],
+                                        perturb_scales[i]))
+        perturbation_rate = netcdf_file.read_array("perturbation_rate")
+        correction_time = netcdf_file.read_scalar("correction_time")
+        return ModelStateDescriptor(constants, mass_grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate,
+                                    correction_time=correction_time,
+                                    scale_inputs=False)
 
 
 class ModelState:
@@ -2082,12 +2208,13 @@ class Experiment:
            number of output times and the second dimension is the length of the
            state vector for each time.
     """
-    def __init__(self, desc, ktens, times, raws):
+    def __init__(self, desc, ktens, integrator, times, raws):
         self.constants = desc.constants
         self.mass_grid = desc.mass_grid
         self.desc = desc
         self.kernel = ktens.kernel
         self.ktens = ktens
+        self.integrator = integrator
         self.times = times
         self.num_time_steps = len(times)
         self.raws = raws
@@ -2100,38 +2227,128 @@ class NetcdfFile:
     Read/write model objects from/to a netCDF file.
 
     Initialization arguments:
-    dataset - netCDF4 Dataset pointing to the file.
+    dataset - netCDF4 Dataset corresponding to the file open for I/O.
+
+    Methods:
+    write_scalar
+    read_scalar
+    write_dimension
+    read_dimension
+    write_characters
+    read_characters
+    write_array
+    read_array
+    write_constants
+    read_constants
+    write_kernel
+    read_kernel
+    write_grid
+    read_grid
+    write_kernel_tensor
+    read_kernel_tensor
+    write_cgk
+    read_cgk
+    write_descriptor
+    read_descriptor
     """
     def __init__(self, dataset):
         self.nc = dataset
 
     def write_scalar(self, name, value, dtype, units, description):
+        """Write a scalar to a netCDF file.
+
+        Arguments:
+        name - Name of variable on file.
+        value - Value to write.
+        dtype - netCDF datatype of variable.
+        units - String describing units of variable.
+        description - Human-readable description of variable's meaning.
+        """
         var = self.nc.createVariable(name, dtype)
         var.units = units
         var.description = description
         var[...] = value
 
     def read_scalar(self, name):
-        return self.nc[name][...]
+        """Read the named variable from a netCDF file."""
+        if np.isnan(self.nc[name]):
+            return None
+        else:
+            return self.nc[name][...]
 
     def write_dimension(self, name, length):
+        """Create a new dimension on a netCDF file.
+
+        Arguments:
+        name - Name of dimension.
+        length - Size of dimension.
+        """
         self.nc.createDimension(name, length)
 
     def read_dimension(self, name):
+        """Retrieve the size of the named dimension on a netCDF file."""
         return len(self.nc.dimensions[name])
 
-    def write_characters(self, name, value, dim_name, description):
-        dim_len = self.read_dimension(dim_name)
-        assert dim_len >= len(value), \
-            "cannot write all characters provided, dimension too short"
-        var = self.nc.createVariable(name, 'S1', (dim_name))
+    def write_characters(self, name, value, dims, description):
+        """Write a string or array of strings to netCDF as a character array.
+
+        Arguments:
+        name - Name of variable on file.
+        value - Value to write.
+        dims - List of strings naming the dimensions of array on the file.
+               The last dimension will be used as the string length.
+               If a scalar string needs to be written, this can be a string
+               rather than a list.
+        description - Human-readable description of variable's meaning.
+        """
+        if isinstance(dims, str):
+            dims = [dims]
+        dim_lens = []
+        for dim in dims:
+            dim_lens.append(self.read_dimension(dim))
+        def assert_correct_shape(dim_lens, value):
+            if len(dim_lens) > 1:
+                assert not isinstance(value, str), \
+                    "too many dimensions provided for string iterable"
+                assert dim_lens[0] == len(value), \
+                    "input string iterable is wrong shape for given " \
+                    "dimensions"
+                for i in range(dim_lens[0]):
+                    assert_correct_shape(dim_lens[1:], value[i])
+            else:
+                assert isinstance(value, str), \
+                    "too few dimensions provided for string iterable " \
+                    "or at least one value is not a string"
+                assert dim_lens[0] >= len(value), \
+                    "some input strings are too long for given array dimension"
+        assert_correct_shape(dim_lens, value)
+        var = self.nc.createVariable(name, 'S1', dims)
         var.description = description
-        var[:] = nc4.stringtochar(np.array([value], 'S{}'.format(dim_len)))
+        var[:] = nc4.stringtochar(np.array(value,
+                                           'S{}'.format(dim_lens[-1])))
 
     def read_characters(self, name):
-        return str(nc4.chartostring(self.nc[name][:]))
+        """Read a string stored in a netCDF file as a character array."""
+        shape = self.nc[name].shape
+        def build_lists(shape, array):
+            if len(shape) > 1:
+                return [build_lists(shape[1:], array[i])
+                        for i in range(shape[0])]
+            else:
+                return str(nc4.chartostring(array[:]))
+        return build_lists(shape, self.nc[name])
 
     def write_array(self, name, value, dtype, dims, units, description):
+        """Write an array to a netCDF file.
+
+        Arguments:
+        name - Name of variable on file.
+        value - Value to write.
+        dtype - netCDF datatype of variable.
+        dims - List of strings naming the dimensions of array on the file.
+        units - String describing units of variable.
+        description - Human-readable description of variable's meaning.
+        """
         assert value.shape == \
             tuple([self.read_dimension(dim) for dim in dims]), \
             "value shape does not match dimensions we were given to write to"
@@ -2141,41 +2358,93 @@ class NetcdfFile:
         var[...] = value
 
     def read_array(self, name):
+        """Read an array from a netCDF file."""
         return self.nc[name][...]
 
     def write_constants(self, constants):
+        """Write a ModelConstants object to a netCDF file."""
         constants.to_netcdf(self)
 
     def read_constants(self):
+        """Read a ModelConstants object from a netCDF file."""
         return ModelConstants.from_netcdf(self)
 
     def write_kernel(self, kernel):
+        """Write a Kernel object to a netCDF file."""
         kernel.to_netcdf(self)
 
     def read_kernel(self, constants):
+        """Read a Kernel object from a netCDF file.
+
+        Arguments:
+        constants - ModelConstants object to use in constructing the Kernel.
+        """
         return Kernel.from_netcdf(self, constants)
 
     def write_mass_grid(self, mass_grid):
+        """Write a MassGrid object to a netCDF file."""
         mass_grid.to_netcdf(self)
 
     def read_mass_grid(self, constants):
+        """Read a MassGrid object from a netCDF file.
+
+        Arguments:
+        constants - ModelConstants object to use in constructing the MassGrid.
+        """
         return MassGrid.from_netcdf(self, constants)
 
     def write_kernel_tensor(self, ktens):
+        """Write a KernelTensor object to a netCDF file."""
         ktens.to_netcdf(self)
 
     def read_kernel_tensor(self, kernel, grid):
+        """Read a KernelTensor object from a netCDF file.
+
+        Arguments:
+        kernel - Kernel object to use in constructing the KernelTensor.
+        grid - MassGrid object to use in constructing the MassGrid.
+        """
         return KernelTensor.from_netcdf(self, kernel, grid)
 
     def write_cgk(self, ktens):
+        """Write constants, grid, kernel, and tensor data to netCDF file.
+
+        Arguments:
+        ktens - KernelTensor object created with the ModelConstants, MassGrid,
+                and Kernel objects that are to be stored.
+        """
         self.write_constants(ktens.grid.constants)
         self.write_kernel(ktens.kernel)
         self.write_mass_grid(ktens.grid)
         self.write_kernel_tensor(ktens)
 
     def read_cgk(self):
+        """Read constants, grid, kernel, and tensor data from netCDF file.
+
+        Returns the tuple
+
+            (constants, kernel, grid, ktens)
+
+        with types
+
+            (ModelConstants, Kernel, MassGrid, KernelTensor)
+        """
         constants = self.read_constants()
         kernel = self.read_kernel(constants)
         grid = self.read_mass_grid(constants)
         ktens = self.read_kernel_tensor(kernel, grid)
         return constants, kernel, grid, ktens
+
+    def write_descriptor(self, desc):
+        """Write ModelStateDescriptor to netCDF file."""
+        desc.to_netcdf(self)
+
+    def read_descriptor(self, constants, mass_grid):
+        """Read ModelStateDescriptor from netCDF file.
+
+        Arguments:
+        constants - ModelConstants object to use in constructing the
+                    descriptor.
+        mass_grid - MassGrid object to use in constructing the descriptor.
+        """
+        return ModelStateDescriptor.from_netcdf(self, constants, mass_grid)

@@ -3904,6 +3904,8 @@ class TestExperiment(unittest.TestCase):
         self.raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
         self.state2 = ModelState(self.desc, self.raw2)
         self.times = np.array([0., 1.])
+        dt = 15.
+        self.integrator = RK45Integrator(self.constants, dt)
 
     def test_init(self):
         times = self.times
@@ -3912,7 +3914,7 @@ class TestExperiment(unittest.TestCase):
         raws[0,:] = self.state.raw
         raws[1,:] = self.state2.raw
         states = [self.state, self.state2]
-        exp = Experiment(self.desc, self.ktens, times, raws)
+        exp = Experiment(self.desc, self.ktens, self.integrator, times, raws)
         self.assertEqual(exp.constants.rho_air, self.constants.rho_air)
         self.assertEqual(exp.mass_grid.num_bins, self.grid.num_bins)
         self.assertEqual(exp.kernel.kc, self.kernel.kc)
@@ -3986,7 +3988,10 @@ class TestNetcdfFile(unittest.TestCase):
         raws[0,:] = self.raw
         raws[1,:] = raw2
         self.times = np.array([0., 1.])
-        self.exp = Experiment(self.desc, self.ktens, self.times, raws)
+        dt = 15.
+        self.integrator = RK45Integrator(self.constants, dt)
+        self.exp = Experiment(self.desc, self.ktens, self.integrator,
+                              self.times, raws)
         self.dataset = nc4.Dataset('test.nc', 'w', diskless=True)
         self.NetcdfFile = NetcdfFile(self.dataset)
 
@@ -4039,6 +4044,77 @@ class TestNetcdfFile(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.NetcdfFile.write_array('array', array,
                 'f8', ['dim'], '1', 'A description')
+
+    def test_read_write_characters_array(self):
+        self.NetcdfFile.write_dimension('string_len', 16)
+        self.NetcdfFile.write_dimension('string_num', 2)
+        string = "Hi there!"
+        string2 = "Bye there!"
+        self.NetcdfFile.write_characters(
+            'strings', [string, string2], ['string_num', 'string_len'],
+            'A description')
+        actual = self.NetcdfFile.read_characters('strings')
+        self.assertEqual(actual, [string, string2])
+
+    def test_read_write_too_many_characters_in_array_raises(self):
+        self.NetcdfFile.write_dimension('string_len', 2)
+        self.NetcdfFile.write_dimension('string_num', 2)
+        string = "Hi"
+        string2 = "Bye"
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.write_characters(
+                'strings', [string, string2], ['string_len', 'string_num'],
+                'A description')
+
+    def test_read_write_characters_array_raises_for_wrong_dimension(self):
+        self.NetcdfFile.write_dimension('string_len', 16)
+        self.NetcdfFile.write_dimension('string_num', 3)
+        string = "Hi"
+        string2 = "Bye"
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.write_characters(
+                'strings', [string, string2], ['string_len', 'string_num'],
+                'A description')
+
+    def test_read_write_characters_array_raises_for_too_many_dimensions(self):
+        self.NetcdfFile.write_dimension('string_len', 2)
+        self.NetcdfFile.write_dimension('string_num', 2)
+        self.NetcdfFile.write_dimension('lang_num', 2)
+        string = "Hi"
+        string2 = "By"
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.write_characters(
+                'strings', [string, string2],
+                ['string_len', 'lang_num', 'string_num'],
+                'A description')
+
+    def test_read_write_characters_multidimensional_array(self):
+        self.NetcdfFile.write_dimension('string_len', 16)
+        self.NetcdfFile.write_dimension('string_num', 2)
+        self.NetcdfFile.write_dimension('lang_num', 2)
+        string = "Hi there!"
+        string2 = "Bye there!"
+        string3 = "Hola!"
+        string4 = "Adios!"
+        strings = [[string, string2], [string3, string4]]
+        self.NetcdfFile.write_characters(
+            'strings', strings, ['string_num', 'lang_num', 'string_len'],
+            'A description')
+        actual = self.NetcdfFile.read_characters('strings')
+        self.assertEqual(actual, strings)
+
+    def test_read_write_characters_raises_for_too_few_dimensions(self):
+        self.NetcdfFile.write_dimension('string_len', 2)
+        self.NetcdfFile.write_dimension('string_num', 2)
+        string = "Hi"
+        string2 = "By"
+        string3 = "Ho"
+        string4 = "Ad"
+        strings = [[string, string2], [string3, string4]]
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.write_characters(
+                'strings', strings, ['string_num', 'string_len'],
+                'A description')
 
     def test_constants_io(self):
         const = self.constants
@@ -4130,3 +4206,101 @@ class TestNetcdfFile(unittest.TestCase):
         for i in range(len(ktens.data.flat)):
             self.assertAlmostEqual(ktens2.data.flat[i] / scale,
                                    ktens.data.flat[i] / scale)
+
+    def test_desc_io(self):
+        nb = self.grid.num_bins
+        const = self.constants
+        grid = self.grid
+        desc = self.desc
+        self.NetcdfFile.write_cgk(self.ktens)
+        self.NetcdfFile.write_descriptor(desc)
+        desc2 = self.NetcdfFile.read_descriptor(const, grid)
+        self.assertEqual(desc2.dsd_deriv_num, desc.dsd_deriv_num)
+        for i in range(desc.dsd_deriv_num):
+            self.assertEqual(desc2.dsd_deriv_names[i],
+                             desc.dsd_deriv_names[i])
+            self.assertEqual(desc2.dsd_deriv_scales[i],
+                             desc.dsd_deriv_scales[i])
+        self.assertEqual(desc2.perturb_num, desc.perturb_num)
+        for i in range(desc.perturb_num):
+            for j in range(nb):
+                self.assertEqual(desc2.perturb_wvs[i,j],
+                                 desc.perturb_wvs[i,j])
+            self.assertEqual(desc2.perturb_transforms[i].transform(2.),
+                             desc.perturb_transforms[i].transform(2.))
+            self.assertEqual(desc2.perturb_scales[i],
+                             desc.perturb_scales[i])
+            for j in range(desc.perturb_num):
+                self.assertEqual(desc2.perturbation_rate[i,j],
+                                 desc.perturbation_rate[i,j])
+        self.assertEqual(desc2.correction_time, desc.correction_time)
+
+    def test_desc_io_bad_transform_type(self):
+        nb = self.grid.num_bins
+        const = self.constants
+        grid = self.grid
+        desc = self.desc
+        self.NetcdfFile.write_cgk(self.ktens)
+        self.NetcdfFile.write_descriptor(desc)
+        ttsl = self.NetcdfFile.read_dimension("transform_type_str_len")
+        self.NetcdfFile.nc['perturb_transform_types'][0,:] = \
+            nc4.stringtochar(np.array(['nonsense'], 'S{}'.format(ttsl)))
+        with self.assertRaises(AssertionError):
+            self.NetcdfFile.read_descriptor(const, grid)
+
+    def test_simple_desc_io(self):
+        nb = self.grid.num_bins
+        const = self.constants
+        grid = self.grid
+        self.NetcdfFile.write_cgk(self.ktens)
+        desc = ModelStateDescriptor(const, grid)
+        self.NetcdfFile.write_descriptor(desc)
+        desc2 = self.NetcdfFile.read_descriptor(const, grid)
+        self.assertEqual(desc2.dsd_deriv_num, desc.dsd_deriv_num)
+        self.assertEqual(desc2.perturb_num, desc.perturb_num)
+
+    def test_desc_io_no_correction_time(self):
+        nb = self.grid.num_bins
+        const = self.constants
+        grid = self.grid
+        self.NetcdfFile.write_cgk(self.ktens)
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        nvar = 3
+        wv0 = self.grid.moment_weight_vector(0)
+        wv6 = self.grid.moment_weight_vector(6)
+        wv9 = self.grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), scale),
+            (wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        self.NetcdfFile.write_descriptor(desc)
+        desc2 = self.NetcdfFile.read_descriptor(const, grid)
+        self.assertEqual(desc2.dsd_deriv_num, desc.dsd_deriv_num)
+        for i in range(desc.dsd_deriv_num):
+            self.assertEqual(desc2.dsd_deriv_names[i],
+                             desc.dsd_deriv_names[i])
+            self.assertEqual(desc2.dsd_deriv_scales[i],
+                             desc.dsd_deriv_scales[i])
+        self.assertEqual(desc2.perturb_num, desc.perturb_num)
+        for i in range(desc.perturb_num):
+            for j in range(nb):
+                self.assertEqual(desc2.perturb_wvs[i,j],
+                                 desc.perturb_wvs[i,j])
+            self.assertEqual(desc2.perturb_transforms[i].transform(2.),
+                             desc.perturb_transforms[i].transform(2.))
+            self.assertEqual(desc2.perturb_scales[i],
+                             desc.perturb_scales[i])
+            for j in range(desc.perturb_num):
+                self.assertEqual(desc2.perturbation_rate[i,j],
+                                 desc.perturbation_rate[i,j])
+        self.assertEqual(desc2.correction_time, desc.correction_time)
