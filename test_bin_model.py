@@ -3599,6 +3599,73 @@ class TestModelState(unittest.TestCase):
         for i in range(2*nb+2 + nvar**2):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
 
+    def test_zeta_cov(self):
+        grid = self.grid
+        nb = grid.num_bins
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(kernel, self.grid)
+        ddn = 2
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        pn = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), scale),
+            (wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(pn)
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        dsd_deriv = np.zeros((ddn, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
+                                  dsd_deriv[1,-4:].mean()])
+        perturb_cov_init = (10. / np.log(10.)) \
+            * (np.ones((pn, pn)) + np.eye(pn))
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv,
+                                 perturb_cov=perturb_cov_init)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        ddsddt_raw = state.dsd_time_deriv_raw([ktens])[:nb]
+        actual = state.zeta_cov_raw(ddsddt_raw)
+        lfs = np.zeros((pn,))
+        lf_jac = np.zeros((pn, ddn+1))
+        for i in range(pn):
+            wv = desc.perturb_wvs[i]
+            lfs[i], lf_jac[i,:] = state.linear_func_raw(wv, derivative=True,
+                                                        dfdt=ddsddt_raw)
+        transform_mat = np.diag([desc.perturb_transforms[i].derivative(lfs[i])
+                                 for i in range(pn)])
+        v_to_zeta = la.pinv(transform_mat @ lf_jac)
+        perturb_cov = desc.perturb_cov_raw(state.raw)
+        expected = v_to_zeta @ perturb_cov @ v_to_zeta.T
+        self.assertEqual(actual.shape, expected.shape)
+        for i in range(len(expected.flat)):
+            self.assertAlmostEqual(actual.flat[i] / expected.flat[i], 1.)
+
+
+class TestIntegrator(unittest.TestCase):
+    """
+    Test Integrator methods.
+    """
+    def test_integrate_raw_raises_not_implemented(self):
+        with self.assertRaises(NotImplementedError):
+            Integrator().integrate_raw(1., 2., 3.)
+
 
 class TestRK45Integrator(unittest.TestCase):
     """
@@ -3632,6 +3699,41 @@ class TestRK45Integrator(unittest.TestCase):
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
         self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
         self.state = ModelState(self.desc, self.raw)
+        ddn = 1
+        dsd_deriv_names = ['lambda']
+        dsd_deriv_scales = [self.constants.std_diameter]
+        pn = 3
+        wv0 = self.grid.moment_weight_vector(0)
+        wv6 = self.grid.moment_weight_vector(6)
+        wv9 = self.grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), scale),
+            (wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(pn)
+        correction_time = 5.
+        self.pc_desc = ModelStateDescriptor(self.constants,
+                                     self.grid,
+                                     dsd_deriv_names=dsd_deriv_names,
+                                     dsd_deriv_scales=dsd_deriv_scales,
+                                     perturbed_variables=perturbed_variables,
+                                     perturbation_rate=perturbation_rate,
+                                     correction_time=correction_time)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd_deriv = np.zeros((ddn, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        fallout_deriv = np.array([dsd_deriv[0,-4:].mean()])
+        perturb_cov_init = (10. / np.log(10.)) \
+            * (np.ones((pn, pn)) + np.eye(pn))
+        self.pc_raw = self.pc_desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                      fallout_deriv=fallout_deriv,
+                                      perturb_cov=perturb_cov_init)
+        self.pc_state = ModelState(self.pc_desc, self.pc_raw)
 
     def test_integrate_raw(self):
         tscale = self.constants.time_scale
@@ -3663,9 +3765,15 @@ class TestRK45Integrator(unittest.TestCase):
         dt = 1.e-5
         num_step = 2
         integrator = RK45Integrator(self.constants, dt)
-        times, states = integrator.integrate(num_step*dt,
-                                             self.state,
-                                             [self.ktens])
+        exp = integrator.integrate(num_step*dt,
+                                   self.state,
+                                   [self.ktens])
+        self.assertIs(exp.desc, self.state.desc)
+        self.assertEqual(len(exp.proc_tens), 1)
+        self.assertIs(exp.proc_tens[0], self.ktens)
+        self.assertIs(exp.integrator, integrator)
+        times = exp.times
+        states = exp.states
         expected = np.linspace(0., num_step*dt, num_step+1)
         self.assertEqual(times.shape, (num_step+1,))
         for i in range(num_step):
@@ -3686,6 +3794,31 @@ class TestRK45Integrator(unittest.TestCase):
             for j in range(nb):
                 self.assertAlmostEqual(actual_dsd[j]/scale,
                                        expected_dsd[j]/scale)
+
+    def test_integrate_with_perturb_cov(self):
+        nb = self.grid.num_bins
+        dt = 1.e-5
+        num_step = 2
+        integrator = RK45Integrator(self.constants, dt)
+        exp = integrator.integrate(num_step*dt,
+                                   self.pc_state,
+                                   [self.ktens])
+        for i in range(num_step+1):
+            actual = exp.ddsddt[i,:]
+            expected = exp.states[i].dsd_time_deriv_raw([self.ktens])[:nb]
+            self.assertEqual(actual.shape, expected.shape)
+            scale = expected.max()
+            for j in range(len(expected)):
+                self.assertAlmostEqual(actual[j] / scale,
+                                       expected[j] / scale)
+            actual = exp.zeta_cov[i,:,:]
+            expected = exp.states[i].zeta_cov_raw(expected)
+            self.assertEqual(actual.shape, expected.shape)
+            scale = expected.max()
+            for j in range(len(expected.flat)):
+                self.assertAlmostEqual(actual.flat[j] / scale,
+                                       expected.flat[j] / scale)
+
 
 class TestTransform(unittest.TestCase):
     """
@@ -3881,27 +4014,52 @@ class TestExperiment(unittest.TestCase):
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
         self.ktens = KernelTensor(self.kernel, self.grid)
+        ddn = 2
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        pn = 3
+        wv0 = self.grid.moment_weight_vector(0)
+        wv6 = self.grid.moment_weight_vector(6)
+        wv9 = self.grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), scale),
+            (wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(pn)
+        correction_time = 5.
         self.desc = ModelStateDescriptor(self.constants,
-                                         self.grid,
-                                         dsd_deriv_names=dsd_deriv_names,
-                                         dsd_deriv_scales=dsd_deriv_scales)
+                                     self.grid,
+                                     dsd_deriv_names=dsd_deriv_names,
+                                     dsd_deriv_scales=dsd_deriv_scales,
+                                     perturbed_variables=perturbed_variables,
+                                     perturbation_rate=perturbation_rate,
+                                     correction_time=correction_time)
         nu = 5.
-        lam = nu / 1.e-4
+        lam = nu / 1.e-3
         dsd = gamma_dist_d(self.grid, lam, nu)
-        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv = np.zeros((ddn, nb))
         dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
-        self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
+                                  dsd_deriv[1,-4:].mean()])
+        perturb_cov_init = (10. / np.log(10.)) \
+            * (np.ones((pn, pn)) + np.eye(pn))
+        self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                      fallout_deriv=fallout_deriv,
+                                      perturb_cov=perturb_cov_init)
         self.state = ModelState(self.desc, self.raw)
         nu2 = 0.
         lam = nu / 5.e-5
         dsd = gamma_dist_d(self.grid, lam, nu)
-        dsd_deriv = np.zeros((2, nb))
+        dsd_deriv = np.zeros((ddn, nb))
         dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
-        self.raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
+        self.raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                      fallout_deriv=fallout_deriv,
+                                      perturb_cov=perturb_cov_init)
         self.state2 = ModelState(self.desc, self.raw2)
         self.times = np.array([0., 1.])
         dt = 15.
@@ -3914,12 +4072,12 @@ class TestExperiment(unittest.TestCase):
         raws[0,:] = self.state.raw
         raws[1,:] = self.state2.raw
         states = [self.state, self.state2]
-        exp = Experiment(self.desc, self.ktens, self.integrator, times, raws)
+        exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws)
         self.assertEqual(exp.constants.rho_air, self.constants.rho_air)
         self.assertEqual(exp.mass_grid.num_bins, self.grid.num_bins)
-        self.assertEqual(exp.kernel.kc, self.kernel.kc)
-        self.assertEqual(exp.ktens.data.shape, self.ktens.data.shape)
-        self.assertTrue(np.all(exp.ktens.data == self.ktens.data))
+        self.assertEqual(exp.proc_tens[0].kernel.kc, self.kernel.kc)
+        self.assertEqual(exp.proc_tens[0].data.shape, self.ktens.data.shape)
+        self.assertTrue(np.all(exp.proc_tens[0].data == self.ktens.data))
         self.assertEqual(exp.times.shape, (ntimes,))
         self.assertEqual(len(exp.states), ntimes)
         for i in range(ntimes):
@@ -3927,6 +4085,45 @@ class TestExperiment(unittest.TestCase):
                              states[i].dsd_moment(0))
         self.assertEqual(exp.desc.dsd_deriv_num, 2)
         self.assertEqual(exp.num_time_steps, ntimes)
+
+    def test_init_with_ddsddt(self):
+        nb = self.grid.num_bins
+        times = self.times
+        ntimes = len(times)
+        raws = np.zeros((ntimes, len(self.state.raw)))
+        raws[0,:] = self.state.raw
+        raws[1,:] = self.state2.raw
+        states = [self.state, self.state2]
+        ddsddt = np.zeros((ntimes, nb))
+        for i in range(ntimes):
+            ddsddt = np.linspace(-nb+i, -i, nb)
+        exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
+                         ddsddt=ddsddt)
+        self.assertEqual(exp.ddsddt.shape, ddsddt.shape)
+        for i in range(len(ddsddt.flat)):
+            self.assertEqual(exp.ddsddt.flat[i],
+                             ddsddt.flat[i])
+
+    def test_init_with_zeta_cov(self):
+        nb = self.grid.num_bins
+        times = self.times
+        ntimes = len(times)
+        raws = np.zeros((ntimes, len(self.state.raw)))
+        raws[0,:] = self.state.raw
+        raws[1,:] = self.state2.raw
+        states = [self.state, self.state2]
+        ddn = self.desc.dsd_deriv_num
+        zeta_cov = np.zeros((ntimes, ddn, ddn))
+        for i in range(ntimes):
+            zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + ddn**2-1),
+                                                ddn**2),
+                                    (ddn, ddn))
+        exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
+                         zeta_cov=zeta_cov)
+        self.assertEqual(exp.zeta_cov.shape, zeta_cov.shape)
+        for i in range(len(zeta_cov.flat)):
+            self.assertEqual(exp.zeta_cov.flat[i],
+                             zeta_cov.flat[i])
 
 
 class TestNetcdfFile(unittest.TestCase):

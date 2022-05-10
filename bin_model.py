@@ -1835,6 +1835,7 @@ class ModelState:
     time_derivative_raw
     linear_func_raw
     linear_func_rate_raw
+    zeta_cov_raw
     rain_prod_breakdown
     """
     def __init__(self, desc, raw):
@@ -2076,6 +2077,30 @@ class ModelState:
         else:
             return np.dot(dfdt, weight_vector), dfdt_deriv @ weight_vector
 
+    def zeta_cov_raw(self, ddsddt):
+        """Find the raw error covariance of dsd_deriv variables and time.
+
+        Arguments:
+        ddsddt - Time derivative of raw DSD, e.g. the first num_bins elements
+                 of dsd_time_deriv_raw.
+        """
+        desc = self.desc
+        ddn = desc.dsd_deriv_num
+        pn = desc.perturb_num
+        lfs = np.zeros((pn,))
+        lf_jac = np.zeros((pn, ddn+1))
+        for i in range(pn):
+            wv = desc.perturb_wvs[i,:]
+            lfs[i], lf_jac[i,:] = self.linear_func_raw(wv, derivative=True,
+                                                       dfdt=ddsddt)
+        transform_mat = np.diag([desc.perturb_transforms[i].derivative(lfs[i])
+                                 for i in range(pn)])
+        v_to_zeta = la.pinv(transform_mat @ lf_jac)
+        # We are assuming here that perturb_cov does not need the "correction"
+        # for pn > ddn + 1.
+        perturb_cov_raw = desc.perturb_cov_raw(self.raw)
+        return v_to_zeta @ perturb_cov_raw @ v_to_zeta.T
+
     def rain_prod_breakdown(self, ktens, cloud_vector, derivative=None):
         """Calculate autoconversion and accretion rates.
 
@@ -2144,11 +2169,73 @@ class ModelState:
             return rates
 
 
-class RK45Integrator:
+class Integrator:
+    """
+    Integrate a model state in time.
+
+    Methods:
+    integrate_raw
+    integrate
+    """
+    def integrate_raw(self, t_len, state, proc_tens):
+        """Integrate the state and return raw state data.
+
+        Arguments:
+        t_len - Length of time to integrate over (nondimensionalized units).
+        state - Initial state.
+        proc_tens - List of process tensors to calculate state process rates
+                    each time step.
+
+        Returns a tuple `(times, raws)`, where times is an array of times at
+        which the output is provided, and raws is an array for which each row
+        is the raw state vector at a different time.
+        """
+        raise NotImplementedError
+
+    def integrate(self, t_len, state, proc_tens):
+        """Integrate the state and return an Experiment.
+
+        Arguments:
+        t_len - Length of time to integrate over (seconds).
+        state - Initial state.
+        proc_tens - List of process tensors to calculate state process rates
+                    each time step.
+
+        Returns an Experiment object summarizing the integration and all inputs
+        to it.
+        """
+        tscale = self.constants.time_scale
+        desc = state.desc
+        times, raws = self.integrate_raw(t_len / tscale, state, proc_tens)
+        times = times * tscale
+        ddn = desc.dsd_deriv_num
+        if ddn > 0:
+            nb = desc.mass_grid.num_bins
+            num_step = len(times) - 1
+            ddsddt = np.zeros((num_step+1, nb))
+            states = [ModelState(desc, raws[i,:]) for i in range(num_step+1)]
+            for i in range(num_step+1):
+                ddsddt[i,:] = states[i].dsd_time_deriv_raw(proc_tens)[:nb]
+            pn = desc.perturb_num
+            if pn > 0:
+                zeta_cov = np.zeros((num_step+1, ddn+1, ddn+1))
+                for i in range(num_step+1):
+                    zeta_cov[i,:,:] = states[i].zeta_cov_raw(ddsddt[i,:])
+            else:
+                zeta_cov = None
+        else:
+            ddsddt = None
+            zeta_cov = None
+        return Experiment(desc, proc_tens, self, times, raws,
+                          ddsddt=ddsddt, zeta_cov=zeta_cov)
+
+
+class RK45Integrator(Integrator):
     """
     Integrate a model state in time using the SciPy RK45 implementation.
 
     Initialization arguments:
+    constants - The ModelConstants object.
     dt - Max time step at which to calculate the results.
 
     Methods:
@@ -2186,15 +2273,6 @@ class RK45Integrator:
         output = np.transpose(solbunch.y)
         return times, output
 
-    def integrate(self, t_len, state, proc_tens):
-        tscale = self.constants.time_scale
-        desc = state.desc
-        times, raws = self.integrate_raw(t_len / tscale, state, proc_tens)
-        states = []
-        for i in range(len(times)):
-            states.append(ModelState(desc,raws[i,:]))
-        return times * tscale, states
-
 
 class Experiment:
     """
@@ -2202,24 +2280,35 @@ class Experiment:
 
     Initialization arguments:
     desc - The ModelStateDescriptor.
-    ktens - Kernel tensor used to perform an integration.
+    proc_tens - Process tensors used to perform an integration.
+    integrator - Integrator that produced the integration.
     times - Times at which snapshot data is output.
+            num_time_steps will be 1 less than the length of this array.
     raws - A 2-D array of raw state vectors, where the first dimension is the
            number of output times and the second dimension is the length of the
            state vector for each time.
+    ddsddt (optional) - Raw derivative of DSD data.
+                        Shape is `(num_time_steps, num_bins)`.
+    zeta_cov - Raw covariance of DSD derivative variables (including time).
+               Shape is `(num_time_steps, dsd_deriv_num+1, dsd_deriv_num+1)`.
+
+    Attributes:
+    num_time_steps - Number of time steps in integration.
     """
-    def __init__(self, desc, ktens, integrator, times, raws):
+    def __init__(self, desc, proc_tens, integrator, times, raws,
+                 ddsddt=None, zeta_cov=None):
         self.constants = desc.constants
         self.mass_grid = desc.mass_grid
         self.desc = desc
-        self.kernel = ktens.kernel
-        self.ktens = ktens
+        self.proc_tens = proc_tens
         self.integrator = integrator
         self.times = times
         self.num_time_steps = len(times)
         self.raws = raws
         self.states = [ModelState(self.desc, raws[i,:])
                        for i in range(self.num_time_steps)]
+        self.ddsddt = ddsddt
+        self.zeta_cov = zeta_cov
 
 
 class NetcdfFile:
