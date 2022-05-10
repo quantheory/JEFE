@@ -1695,7 +1695,6 @@ class TestModelStateDescriptor(unittest.TestCase):
         const = self.constants
         grid = self.grid
         desc = ModelStateDescriptor(const, grid)
-        self.assertEqual(desc.dsd_scale, const.mass_conc_scale)
 
     def test_state_len_dsd_only(self):
         const = self.constants
@@ -1759,7 +1758,7 @@ class TestModelStateDescriptor(unittest.TestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = ModelStateDescriptor(const, grid)
-        dsd_scale = desc.dsd_scale
+        dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         raw = desc.construct_raw(dsd, fallout=fallout)
@@ -2089,7 +2088,7 @@ class TestModelStateDescriptor(unittest.TestCase):
         dsd_deriv_names = ['lambda', 'nu']
         desc = ModelStateDescriptor(const, grid,
                                     dsd_deriv_names=dsd_deriv_names)
-        dsd_scale = desc.dsd_scale
+        dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb))
@@ -2164,7 +2163,7 @@ class TestModelStateDescriptor(unittest.TestCase):
         desc = ModelStateDescriptor(const, grid,
                                     dsd_deriv_names=dsd_deriv_names,
                                     dsd_deriv_scales=dsd_deriv_scales)
-        dsd_scale = desc.dsd_scale
+        dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb))
@@ -2187,7 +2186,7 @@ class TestModelStateDescriptor(unittest.TestCase):
         dsd_deriv_names = ['lambda', 'nu']
         desc = ModelStateDescriptor(const, grid,
                                     dsd_deriv_names=dsd_deriv_names)
-        dsd_scale = desc.dsd_scale
+        dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb))
@@ -2273,7 +2272,7 @@ class TestModelStateDescriptor(unittest.TestCase):
         desc = ModelStateDescriptor(const, grid,
                                     dsd_deriv_names=dsd_deriv_names,
                                     dsd_deriv_scales=dsd_deriv_scales)
-        dsd_scale = desc.dsd_scale
+        dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb))
@@ -3187,12 +3186,13 @@ class TestModelState(unittest.TestCase):
         expected = np.zeros((3*nb+3,))
         expected[:nb+1], derivative = ktens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
+        dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
         for i in range(2):
             deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
-                / desc.dsd_scale
+                / dsd_scale
             deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
-                / desc.dsd_scale
+                / dsd_scale
             expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
                 derivative @ deriv_plus_fallout
         self.assertEqual(len(actual), 3*nb+3)
@@ -3206,7 +3206,7 @@ class TestModelState(unittest.TestCase):
         actual = state.linear_func_raw(weight_vector)
         expected = state.dsd_moment(3, cloud_only=True)
         expected *= const.std_mass \
-            / (const.std_diameter**3 * state.desc.dsd_scale)
+            / (const.std_diameter**3 * const.mass_conc_scale)
         self.assertAlmostEqual(actual / expected, 1.)
 
     def test_linear_func_raw_with_derivative(self):
@@ -3227,7 +3227,7 @@ class TestModelState(unittest.TestCase):
                                                      derivative=True)
         expected = state.dsd_moment(3, cloud_only=True)
         expected *= const.std_mass \
-            / (const.std_diameter**3 * state.desc.dsd_scale)
+            / (const.std_diameter**3 * const.mass_conc_scale)
         self.assertAlmostEqual(actual / expected, 1.)
         self.assertEqual(actual_deriv.shape, (2,))
         dsd_deriv_raw = desc.dsd_deriv_raw(state.raw)
@@ -3255,7 +3255,7 @@ class TestModelState(unittest.TestCase):
                                                      dfdt=dfdt)
         expected = state.dsd_moment(3, cloud_only=True)
         expected *= const.std_mass \
-            / (const.std_diameter**3 * state.desc.dsd_scale)
+            / (const.std_diameter**3 * const.mass_conc_scale)
         self.assertAlmostEqual(actual / expected, 1.)
         self.assertEqual(actual_deriv.shape, (3,))
         dsd_deriv_raw = np.zeros((3, nb))
@@ -3469,12 +3469,13 @@ class TestModelState(unittest.TestCase):
         expected = np.zeros((3*nb+3+nvar**2,))
         expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
+        dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
         for i in range(2):
             deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
-                / desc.dsd_scale
+                / dsd_scale
             deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
-                / desc.dsd_scale
+                / dsd_scale
             expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
                 rate_deriv @ deriv_plus_fallout
         dfdt = expected[:nb]
@@ -3553,12 +3554,13 @@ class TestModelState(unittest.TestCase):
         expected = np.zeros((2*nb+2+nvar**2,))
         expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
+        dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
         for i in range(1):
             deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
-                / desc.dsd_scale
+                / dsd_scale
             deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
-                / desc.dsd_scale
+                / dsd_scale
             expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
                 rate_deriv @ deriv_plus_fallout
         dfdt = expected[:nb]
@@ -3678,7 +3680,7 @@ class TestRK45Integrator(unittest.TestCase):
                 + dt_scaled*expect_state.time_derivative_raw([self.ktens])
         for i in range(num_step+1):
             actual_dsd = states[i].dsd()
-            expected_dsd = expected[i,:nb] * self.desc.dsd_scale
+            expected_dsd = expected[i,:nb] * self.constants.mass_conc_scale
             self.assertEqual(actual_dsd.shape, expected_dsd.shape)
             scale = expected_dsd.max()
             for j in range(nb):
@@ -3914,10 +3916,26 @@ class TestNetcdfFile(unittest.TestCase):
         self.ktens = KernelTensor(self.kernel, self.grid)
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        nvar = 3
+        wv0 = self.grid.moment_weight_vector(0)
+        wv6 = self.grid.moment_weight_vector(6)
+        wv9 = self.grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), scale),
+            (wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        correction_time = 5.
         self.desc = ModelStateDescriptor(self.constants,
-                                         self.grid,
-                                         dsd_deriv_names=dsd_deriv_names,
-                                         dsd_deriv_scales=dsd_deriv_scales)
+                                    self.grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate,
+                                    correction_time=correction_time)
         nu = 5.
         lam = nu / 1.e-4
         dsd = gamma_dist_d(self.grid, lam, nu)

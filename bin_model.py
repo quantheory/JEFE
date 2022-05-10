@@ -1355,13 +1355,12 @@ class ModelStateDescriptor:
     Initialization arguments:
     constants - A ModelConstants object.
     mass_grid - A MassGrid object defining the bins.
-    fallout (optional) - Whether to include a variable for mass that has fallen
-                         out of the model box. Defaults to True.
     dsd_deriv_names (optional) - List of strings naming variables with respect
                                  to which DSD derivatives are prognosed.
     dsd_deriv_scales (optional) - List of scales for the derivatives of the
                                   named variable. These scales will be applied
-                                  in addition to dsd_scale. They default to 1.
+                                  in addition to mass_conc_scale. They default
+                                  to 1.
     perturbed_variables (optional) - A list of tuples, with each tuple
         containing a weight vector, a transform, and a scale, in that order.
     perturbation_rate (optional) - A covariance matrix representing the error
@@ -1372,12 +1371,11 @@ class ModelStateDescriptor:
     Attributes:
     constants - ModelConstants object used by this model.
     mass_grid - The grid of the DSD used by this model.
-    dsd_scale - Factor used internally to scale the DSD.
     dsd_deriv_num - Number of variables with respect to which the derivative of
                     the DSD is tracked.
     dsd_deriv_names - Names of variables with tracked derivatives.
     dsd_deriv_scales - Scales of variables with tracked derivatives.
-                       These scales are applied on top of the dsd_scale.
+                       These scales are applied on top of mass_conc_scale.
 
     Methods:
     state_len
@@ -1393,13 +1391,12 @@ class ModelStateDescriptor:
     fallout_deriv_raw
     perturb_cov_raw
     """
-    def __init__(self, constants, mass_grid, dsd_scale=None,
+    def __init__(self, constants, mass_grid,
                  dsd_deriv_names=None, dsd_deriv_scales=None,
                  perturbed_variables=None, perturbation_rate=None,
                  correction_time=None):
         self.constants = constants
         self.mass_grid = mass_grid
-        self.dsd_scale = constants.mass_conc_scale
         if dsd_deriv_names is not None:
             self.dsd_deriv_num = len(dsd_deriv_names)
             assert len(set(dsd_deriv_names)) == self.dsd_deriv_num, \
@@ -1474,12 +1471,13 @@ class ModelStateDescriptor:
         nb = self.mass_grid.num_bins
         ddn = self.dsd_deriv_num
         pn = self.perturb_num
+        mc_scale = self.constants.mass_conc_scale
         assert len(dsd) == nb, "dsd of wrong size for this descriptor's grid"
         idx, num = self.dsd_loc()
-        raw[idx:idx+num] = dsd / self.dsd_scale
+        raw[idx:idx+num] = dsd / self.constants.mass_conc_scale
         if fallout is None:
             fallout = 0.
-        raw[self.fallout_loc()] = fallout / self.dsd_scale
+        raw[self.fallout_loc()] = fallout / mc_scale
         if ddn > 0:
             assert dsd_deriv is not None, \
                 "dsd_deriv input is required, but missing"
@@ -1492,10 +1490,10 @@ class ModelStateDescriptor:
             for i in range(ddn):
                 idx, num = self.dsd_deriv_loc(self.dsd_deriv_names[i])
                 raw[idx:idx+num] = dsd_deriv[i,:] / self.dsd_deriv_scales[i] \
-                                    / self.dsd_scale
+                                    / mc_scale
                 idx = self.fallout_deriv_loc(self.dsd_deriv_names[i])
                 raw[idx] = fallout_deriv[i] / self.dsd_deriv_scales[i] \
-                                    / self.dsd_scale
+                                    / mc_scale
         else:
             assert dsd_deriv is None or len(dsd_deriv.flat) == 0, \
                 "no dsd derivatives should be specified for this descriptor"
@@ -1703,7 +1701,7 @@ class ModelState:
         """Droplet size distribution associated with this state.
 
         The units are those of M3 for the distribution."""
-        return self.desc.dsd_raw(self.raw) * self.desc.dsd_scale
+        return self.desc.dsd_raw(self.raw) * self.constants.mass_conc_scale
 
     def dsd_moment(self, n, cloud_only=None, rain_only=None):
         """Calculate a moment of the DSD.
@@ -1721,7 +1719,7 @@ class ModelState:
 
     def fallout(self):
         """Return amount of third moment that has fallen out of the model."""
-        return self.desc.fallout_raw(self.raw) * self.desc.dsd_scale
+        return self.desc.fallout_raw(self.raw) * self.constants.mass_conc_scale
 
     def dsd_deriv(self, var_name=None):
         """Return derivatives of the DSD with respect to different variables.
@@ -1741,7 +1739,7 @@ class ModelState:
         else:
             idx = self.desc.dsd_deriv_names.index(var_name)
             dsd_deriv *= self.desc.dsd_deriv_scales[idx]
-        dsd_deriv *= self.desc.dsd_scale
+        dsd_deriv *= self.constants.mass_conc_scale
         return dsd_deriv
 
     def fallout_deriv(self, var_name=None):
@@ -1759,11 +1757,12 @@ class ModelState:
             output = self.desc.fallout_deriv_raw(self.raw)
             for i in range(self.desc.dsd_deriv_num):
                 output[i] *= self.desc.dsd_deriv_scales[i]
-            return output * self.desc.dsd_scale
+            return output * self.constants.mass_conc_scale
         else:
             idx = self.desc.dsd_deriv_names.index(var_name)
             return self.desc.fallout_deriv_raw(self.raw) \
-                * self.desc.dsd_scale * self.desc.dsd_deriv_scales[idx]
+                * self.constants.mass_conc_scale \
+                * self.desc.dsd_deriv_scales[idx]
 
     def perturb_cov(self):
         """Return perturbation covariance matrix."""
