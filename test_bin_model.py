@@ -3849,6 +3849,27 @@ class TestTransform(unittest.TestCase):
             Transform().get_parameters()
 
 
+class TestIdentityTransform(unittest.TestCase):
+    """
+    Test IdentityTransform methods.
+    """
+    def test_identity_transform(self):
+        self.assertEqual(IdentityTransform().transform(2.), 2.)
+
+    def test_identity_transform_deriv(self):
+        self.assertEqual(IdentityTransform().derivative(2.), 1.)
+
+    def test_identity_transform_second_over_first_derivative(self):
+        self.assertEqual(IdentityTransform().second_over_first_derivative(2.),
+                         0.)
+
+    def test_type_string(self):
+        self.assertEqual(IdentityTransform().type_string(), 'Identity')
+
+    def test_get_parameters(self):
+        self.assertEqual(IdentityTransform().get_parameters(), [])
+
+
 class TestLogTransform(unittest.TestCase):
     """
     Test LogTransform methods.
@@ -4481,7 +4502,7 @@ class TestNetcdfFile(unittest.TestCase):
         scale = 10. / np.log(10.)
         perturbed_variables = [
             (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), scale),
+            (wv6, IdentityTransform(), scale),
             (wv9, LogTransform(), scale),
         ]
         error_rate = 0.5 / 60.

@@ -1360,10 +1360,37 @@ class Transform:
 
     @classmethod
     def from_params(self, type_str, params):
-        if type_str == "Log":
+        if type_str == "Identity":
+            return IdentityTransform()
+        elif type_str == "Log":
             return LogTransform()
         else:
             assert False, "transform type string not recognized"
+
+
+class IdentityTransform(Transform):
+    """
+    Transform a prognostic variable by doing nothing.
+    """
+    def transform(self, x):
+        """Transform the variable."""
+        return x
+
+    def derivative(self, x):
+        """Calculate the first derivative of the transformation."""
+        return 1.
+
+    def second_over_first_derivative(self, x):
+        """Calculate the second derivative divided by the first."""
+        return 0.
+
+    def type_string(self):
+        """Get string representing type of transform."""
+        return "Identity"
+
+    def get_parameters(self):
+        """Get parameters of this transform as a list."""
+        return []
 
 
 class LogTransform(Transform):
