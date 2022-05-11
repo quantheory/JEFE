@@ -1364,6 +1364,8 @@ class Transform:
             return IdentityTransform()
         elif type_str == "Log":
             return LogTransform()
+        elif type_str == "QuadToLog":
+            return QuadToLogTransform(params[0])
         else:
             assert False, "transform type string not recognized"
 
@@ -1416,6 +1418,53 @@ class LogTransform(Transform):
     def get_parameters(self):
         """Get parameters of this transform as a list."""
         return []
+
+
+class QuadToLogTransform(Transform):
+    """
+    Transform a prognostic variable using a mix of a quadratic and logarithm.
+
+    The transform represented by this class uses a quadratic near 0, and the
+    natural logarithm for larger values. The logarithm is offset, and quadratic
+    chosen so that the first and second derivatives are continuous.
+
+    Initialization arguments:
+    x0 - Length scale at which quadratic to logarithm transition occurs.
+    """
+    def __init__(self, x0):
+        self.x0 = x0
+
+    def transform(self, x):
+        """Transform the variable."""
+        xs = x / self.x0
+        if xs >= 1.:
+            return np.log(xs) + 1.5
+        else:
+            return -0.5 * (xs)**2 + 2. * xs
+
+    def derivative(self, x):
+        """Calculate the first derivative of the transformation."""
+        xs = x / self.x0
+        if xs >= 1.:
+            return 1. / x
+        else:
+            return (-xs + 2.) / self.x0
+
+    def second_over_first_derivative(self, x):
+        """Calculate the second derivative divided by the first."""
+        xs = x / self.x0
+        if xs >= 1.:
+            return -1. / x
+        else:
+            return -1. / ((-xs + 2.) * self.x0)
+
+    def type_string(self):
+        """Get string representing type of transform."""
+        return "QuadToLog"
+
+    def get_parameters(self):
+        """Get parameters of this transform as a list."""
+        return [self.x0]
 
 
 class ModelStateDescriptor:

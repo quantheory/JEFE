@@ -3891,6 +3891,35 @@ class TestLogTransform(unittest.TestCase):
         self.assertEqual(LogTransform().get_parameters(), [])
 
 
+class TestQuadToLogTransform(unittest.TestCase):
+    """
+    Test QuadToLogTransform methods.
+    """
+    def setUp(self):
+        self.trans = QuadToLogTransform(0.3)
+
+    def test_quad_to_log_transform(self):
+        self.assertEqual(self.trans.transform(0.15), 0.875)
+        self.assertEqual(self.trans.transform(2.),
+                         np.log(2. / 0.3) + 1.5)
+
+    def test_identity_transform_deriv(self):
+        self.assertEqual(self.trans.derivative(0.15), 5.)
+        self.assertEqual(self.trans.derivative(2.), 1./2.)
+
+    def test_identity_transform_second_over_first_derivative(self):
+        self.assertEqual(self.trans.second_over_first_derivative(0.15),
+                         -20./9.)
+        self.assertEqual(self.trans.second_over_first_derivative(2.),
+                         -1./2.)
+
+    def test_type_string(self):
+        self.assertEqual(self.trans.type_string(), 'QuadToLog')
+
+    def test_get_parameters(self):
+        self.assertEqual(self.trans.get_parameters(), [0.3])
+
+
 class TestBeardV(unittest.TestCase):
     """
     Test beard_v function.
@@ -4503,7 +4532,7 @@ class TestNetcdfFile(unittest.TestCase):
         perturbed_variables = [
             (wv0, LogTransform(), scale),
             (wv6, IdentityTransform(), scale),
-            (wv9, LogTransform(), scale),
+            (wv9, QuadToLogTransform(0.3), scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
