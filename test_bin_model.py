@@ -3726,6 +3726,13 @@ class TestRK45Integrator(unittest.TestCase):
                                      perturbed_variables=perturbed_variables,
                                      perturbation_rate=perturbation_rate,
                                      correction_time=correction_time)
+        self.pc_neg_desc = ModelStateDescriptor(self.constants,
+                                     self.grid,
+                                     dsd_deriv_names=dsd_deriv_names,
+                                     dsd_deriv_scales=dsd_deriv_scales,
+                                     perturbed_variables=perturbed_variables,
+                                     perturbation_rate=-perturbation_rate,
+                                     correction_time=correction_time)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(self.grid, lam, nu)
@@ -3738,6 +3745,11 @@ class TestRK45Integrator(unittest.TestCase):
                                       fallout_deriv=fallout_deriv,
                                       perturb_cov=perturb_cov_init)
         self.pc_state = ModelState(self.pc_desc, self.pc_raw)
+        self.pc_neg_raw = \
+            self.pc_neg_desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                           fallout_deriv=fallout_deriv,
+                                           perturb_cov=1.e-10 * np.eye(3))
+        self.pc_neg_state = ModelState(self.pc_neg_desc, self.pc_neg_raw)
 
     def test_integrate_raw(self):
         tscale = self.constants.time_scale
@@ -3822,6 +3834,16 @@ class TestRK45Integrator(unittest.TestCase):
             for j in range(len(expected.flat)):
                 self.assertAlmostEqual(actual.flat[j] / scale,
                                        expected.flat[j] / scale)
+
+    def test_integrate_getting_negative_perturb_cov_raises(self):
+        nb = self.grid.num_bins
+        dt = 1.e-5
+        num_step = 2
+        integrator = RK45Integrator(self.constants, dt)
+        with self.assertRaises(AssertionError):
+            exp = integrator.integrate(num_step*dt,
+                                       self.pc_neg_state,
+                                       [self.ktens])
 
 
 class TestTransform(unittest.TestCase):
@@ -4178,6 +4200,103 @@ class TestExperiment(unittest.TestCase):
         for i in range(len(zeta_cov.flat)):
             self.assertEqual(exp.zeta_cov.flat[i],
                              zeta_cov.flat[i])
+
+    def test_get_moments_and_covariances(self):
+        grid = self.grid
+        nb = grid.num_bins
+        end_time = 15.
+        exp = self.integrator.integrate(end_time, self.state, [self.ktens])
+        wvs = np.zeros((2, nb))
+        wvs[0,:] = grid.moment_weight_vector(6)
+        wvs[1,:] = grid.moment_weight_vector(3, cloud_only=True)
+        mom, cov = exp.get_moments_and_covariances(wvs)
+        expected_mom = np.zeros((2,2))
+        expected_cov = np.zeros((2,2,2))
+        for i in range(2):
+            deriv = np.zeros((2, self.desc.dsd_deriv_num+1))
+            for j in range(2):
+                expected_mom[i,j], deriv[j,:] = \
+                    exp.states[i].linear_func_raw(wvs[j], derivative=True,
+                                                  dfdt=exp.ddsddt[i,:])
+            expected_cov[i,:,:] = deriv @ exp.zeta_cov[i,:,:] @ deriv.T
+        self.assertEqual(mom.shape, expected_mom.shape)
+        for i in range(len(mom.flat)):
+            self.assertEqual(mom.flat[i], expected_mom.flat[i])
+        self.assertEqual(cov.shape, expected_cov.shape)
+        for i in range(len(cov.flat)):
+            self.assertEqual(cov.flat[i], expected_cov.flat[i])
+
+    def test_get_moments_and_covariances_single_moment(self):
+        grid = self.grid
+        nb = grid.num_bins
+        end_time = 15.
+        exp = self.integrator.integrate(end_time, self.state, [self.ktens])
+        wvs = grid.moment_weight_vector(6)
+        mom, cov = exp.get_moments_and_covariances(wvs)
+        expected_mom = np.zeros((2,))
+        expected_cov = np.zeros((2,))
+        for i in range(2):
+            expected_mom[i], deriv = \
+                exp.states[i].linear_func_raw(wvs, derivative=True,
+                                              dfdt=exp.ddsddt[i,:])
+            expected_cov[i] = deriv @ exp.zeta_cov[i,:,:] @ deriv.T
+        self.assertEqual(mom.shape, expected_mom.shape)
+        for i in range(len(mom.flat)):
+            self.assertEqual(mom.flat[i], expected_mom.flat[i])
+        self.assertEqual(cov.shape, expected_cov.shape)
+        for i in range(len(cov.flat)):
+            self.assertEqual(cov.flat[i], expected_cov.flat[i])
+
+    def test_get_moments_and_covariances_single_time(self):
+        grid = self.grid
+        nb = grid.num_bins
+        end_time = 15.
+        exp = self.integrator.integrate(end_time, self.state, [self.ktens])
+        wvs = np.zeros((2, nb))
+        wvs[0,:] = grid.moment_weight_vector(6)
+        wvs[1,:] = grid.moment_weight_vector(3, cloud_only=True)
+        mom, cov = exp.get_moments_and_covariances(wvs, times=[1])
+        expected_mom = np.zeros((1,2))
+        expected_cov = np.zeros((1,2,2))
+        deriv = np.zeros((2, self.desc.dsd_deriv_num+1))
+        for j in range(2):
+            expected_mom[0,j], deriv[j,:] = \
+                exp.states[1].linear_func_raw(wvs[j], derivative=True,
+                                              dfdt=exp.ddsddt[1,:])
+        expected_cov[0,:,:] = deriv @ exp.zeta_cov[1,:,:] @ deriv.T
+        self.assertEqual(mom.shape, expected_mom.shape)
+        for i in range(len(mom.flat)):
+            self.assertEqual(mom.flat[i], expected_mom.flat[i])
+        self.assertEqual(cov.shape, expected_cov.shape)
+        for i in range(len(cov.flat)):
+            self.assertEqual(cov.flat[i], expected_cov.flat[i])
+
+    def test_get_moments_and_covariances_raises_without_data(self):
+        nb = self.grid.num_bins
+        ddn = self.desc.dsd_deriv_num
+        times = self.times
+        ntimes = len(times)
+        raws = np.zeros((ntimes, len(self.state.raw)))
+        raws[0,:] = self.state.raw
+        raws[1,:] = self.state2.raw
+        states = [self.state, self.state2]
+        ddsddt = np.zeros((ntimes, nb))
+        for i in range(ntimes):
+            ddsddt = np.linspace(-nb+i, -i, nb)
+        zeta_cov = np.zeros((ntimes, ddn, ddn))
+        for i in range(ntimes):
+            zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + ddn**2-1),
+                                                ddn**2),
+                                    (ddn, ddn))
+        exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
+                         ddsddt=ddsddt)
+        wvs = self.grid.moment_weight_vector(6)
+        with self.assertRaises(AssertionError):
+            exp.get_moments_and_covariances(wvs)
+        exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
+                         zeta_cov=zeta_cov)
+        with self.assertRaises(AssertionError):
+            exp.get_moments_and_covariances(wvs)
 
 
 class TestNetcdfFile(unittest.TestCase):

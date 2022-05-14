@@ -2372,6 +2372,14 @@ class RK45Integrator(Integrator):
             ModelState(state.desc, raw).time_derivative_raw(proc_tens)
         solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
                              method='RK45', t_eval=times, max_step=self.dt)
+        if state.desc.perturb_num > 0:
+            for i in range(num_step+1):
+                pc = state.desc.perturb_cov_raw(solbunch.y[:,i])
+                assert np.all(la.eigvalsh(pc) >= 0.), \
+                        "negative covariance occurred at: " \
+                        + str(solbunch.t[i])
+        assert solbunch.status == 0, \
+            "integration failed: " + solbunch.message
         output = np.transpose(solbunch.y)
         return times, output
 
@@ -2409,6 +2417,7 @@ class Experiment:
     num_time_steps - Number of time steps in integration.
 
     Methods:
+    get_moments_and_covariances
     to_netcdf
 
     Class methods:
@@ -2428,6 +2437,49 @@ class Experiment:
                        for i in range(self.num_time_steps)]
         self.ddsddt = ddsddt
         self.zeta_cov = zeta_cov
+
+    def get_moments_and_covariances(self, wvs, times=None):
+        """Calculate moments and their error covariances.
+
+        Arguments:
+        wvs - An array where each row is a weight vector.
+        times (optional) - Array of times to sample. If not specified, all
+                           times in this experiment will be returned.
+
+        Returns a tuple `(lfs, lf_cov)`, where lfs is an array of moments of
+        shape `(num_time_steps, lf_num)`, where lf_num is the number of moments
+        requested, and lf_cov is an array of shape
+        `(num_time_steps, lf_num, lf_num)`, which gives the covariance matrix
+        at each time of the requested moments.
+        """
+        assert (self.ddsddt is not None) and (self.zeta_cov is not None), \
+            "experiment did not produce covariance data to calculate with"
+        need_reshape = len(wvs.shape) == 1
+        if need_reshape:
+            wvs = wvs[None,:]
+        lf_num = wvs.shape[0]
+        if times is None:
+            nt = self.num_time_steps
+        else:
+            nt = len(times)
+        lfs = np.zeros((nt, lf_num))
+        lf_cov = np.zeros((nt, lf_num, lf_num))
+        for i in range(nt):
+            if times is None:
+                it = i
+            else:
+                it = times[i]
+            deriv = np.zeros((lf_num, self.desc.dsd_deriv_num+1))
+            for j in range(lf_num):
+                lfs[i,j], deriv[j,:] = \
+                    self.states[it].linear_func_raw(wvs[j,:],
+                                                    derivative=True,
+                                                    dfdt=self.ddsddt[it,:])
+            lf_cov[i,:,:] = deriv @ self.zeta_cov[it,:,:] @ deriv.T
+        if need_reshape:
+            return lfs[:,0], lf_cov[:,0,0]
+        else:
+            return lfs, lf_cov
 
     def to_netcdf(self, netcdf_file):
         """Write Experiment to netCDF file."""
