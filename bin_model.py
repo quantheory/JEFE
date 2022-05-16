@@ -1506,7 +1506,7 @@ class ModelStateDescriptor:
     fallout_loc
     dsd_deriv_loc
     fallout_deriv_loc
-    perturb_cov_loc
+    perturb_chol_loc
     dsd_raw
     fallout_raw
     dsd_deriv_raw
@@ -1585,7 +1585,7 @@ class ModelStateDescriptor:
 
     def state_len(self):
         """Return the length of the state vector."""
-        idx, num = self.perturb_cov_loc()
+        idx, num = self.perturb_chol_loc()
         return idx + num
 
     def construct_raw(self, dsd, fallout=None, dsd_deriv=None,
@@ -1646,8 +1646,15 @@ class ModelStateDescriptor:
                     for j in range(pn):
                         perturb_cov[i,j] /= \
                             self.perturb_scales[i] * self.perturb_scales[j]
-                idx, num = self.perturb_cov_loc()
-                raw[idx:idx+num] = np.reshape(perturb_cov, (num,))
+            else:
+                perturb_cov = 1.e-50 * np.eye(pn)
+            idx, _ = self.perturb_chol_loc()
+            chol = la.cholesky(perturb_cov, lower=True)
+            ic = 0
+            for i in range(pn):
+                for j in range(i+1):
+                    raw[idx+ic] = chol[i,j]
+                    ic += 1
         else:
             assert perturb_cov is None, \
                 "no perturbation covariance should be specified " \
@@ -1724,15 +1731,15 @@ class ModelStateDescriptor:
         else:
             return idx+num
 
-    def perturb_cov_loc(self):
-        """Return location of perturbation covariance matrix.
+    def perturb_chol_loc(self):
+        """Return location of perturbation covariance Cholesky decomposition.
 
         Returns a tuple (idx, num), where idx is the location of the first
         element and num is the number of elements.
         """
         idx, num = self.dsd_deriv_loc(with_fallout=True)
         pn = self.perturb_num
-        return idx[-1] + num, pn*pn
+        return idx[-1] + num, (pn*(pn+1)) // 2
 
     def dsd_raw(self, raw, with_fallout=None):
         """Return raw DSD data from the state vector.
@@ -1793,11 +1800,22 @@ class ModelStateDescriptor:
         else:
             return raw[idx]
 
+    def perturb_chol_raw(self, raw):
+        """Return perturbation covariance Cholesky decomposition from state."""
+        idx, _ = self.perturb_chol_loc()
+        pn = self.perturb_num
+        pc = np.zeros((pn, pn))
+        ic = 0
+        for i in range(pn):
+            for j in range(i+1):
+                pc[i,j] = raw[idx+ic]
+                ic += 1
+        return pc
+
     def perturb_cov_raw(self, raw):
         """Return raw perturbation covariance matrix from the state vector."""
-        idx, num = self.perturb_cov_loc()
-        pn = self.perturb_num
-        return np.reshape(raw[idx:idx+num], (pn, pn))
+        pc = self.perturb_chol_raw(raw)
+        return pc @ pc.T
 
     def to_netcdf(self, netcdf_file):
         netcdf_file.write_dimension("dsd_deriv_num", self.dsd_deriv_num)
@@ -2041,7 +2059,6 @@ class ModelState:
             else:
                 dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
         if pn > 0:
-            pcidx, pcnum = desc.perturb_cov_loc()
             ddsddt = desc.dsd_raw(dfdt)
             ddsddt_deriv = np.zeros((ddn+1,nb))
             ddsddt_deriv[0,:] = double_time_deriv[:nb]
@@ -2085,7 +2102,23 @@ class ModelState:
             if self.desc.correction_time is not None:
                 cov_rate += (perturb_cov_projected - perturb_cov_raw) \
                                 / self.desc.correction_time
-            dfdt[pcidx:pcidx+pcnum] = np.reshape(cov_rate, (pcnum,))
+            # Convert this rate to a rate on the Cholesky decomposition.
+            pcidx, pcnum = desc.perturb_chol_loc()
+            perturb_chol = desc.perturb_chol_raw(self.raw)
+            chol_rate = la.solve(perturb_chol, cov_rate)
+            chol_rate = np.transpose(la.solve(perturb_chol, chol_rate.T))
+            for i in range(pn):
+                chol_rate[i,i] = 0.5 * chol_rate[i,i]
+                for j in range(i+1, pn):
+                    chol_rate[i,j] = 0.
+            chol_rate = perturb_chol @ chol_rate
+            chol_rate_flat = np.zeros((pcnum,))
+            ic = 0
+            for i in range(pn):
+                for j in range(i+1):
+                    chol_rate_flat[ic] = chol_rate[i,j]
+                    ic += 1
+            dfdt[pcidx:pcidx+pcnum] = chol_rate_flat
         return dfdt
 
     def linear_func_raw(self, weight_vector, derivative=None, dfdt=None):
@@ -2372,14 +2405,14 @@ class RK45Integrator(Integrator):
             ModelState(state.desc, raw).time_derivative_raw(proc_tens)
         solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
                              method='RK45', t_eval=times, max_step=self.dt)
+        assert solbunch.status == 0, \
+            "integration failed: " + solbunch.message
         if state.desc.perturb_num > 0:
             for i in range(num_step+1):
                 pc = state.desc.perturb_cov_raw(solbunch.y[:,i])
                 assert np.all(la.eigvalsh(pc) >= 0.), \
                         "negative covariance occurred at: " \
                         + str(solbunch.t[i])
-        assert solbunch.status == 0, \
-            "integration failed: " + solbunch.message
         output = np.transpose(solbunch.y)
         return times, output
 

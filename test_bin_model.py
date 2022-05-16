@@ -2322,7 +2322,8 @@ class TestModelStateDescriptor(unittest.TestCase):
                                     perturbation_rate=perturbation_rate)
         self.assertEqual(desc.perturb_num, nvar)
         self.assertIsNone(desc.correction_time)
-        self.assertEqual(desc.state_len(), 3*nb + 3 + nvar*nvar)
+        nchol = (nvar * (nvar + 1)) // 2
+        self.assertEqual(desc.state_len(), 3*nb + 3 + nchol)
         self.assertEqual(desc.perturb_wvs.shape, (nvar, nb))
         for i in range(nvar):
             for j in range(nb):
@@ -2478,7 +2479,7 @@ class TestModelStateDescriptor(unittest.TestCase):
                                         dsd_deriv_scales=dsd_deriv_scales,
                                         correction_time=correction_time)
 
-    def test_perturb_cov_loc(self):
+    def test_perturb_chol_loc(self):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
@@ -2501,7 +2502,48 @@ class TestModelStateDescriptor(unittest.TestCase):
                                     dsd_deriv_scales=dsd_deriv_scales,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
-        self.assertEqual(desc.perturb_cov_loc(), (3*nb+3, nvar**2))
+        self.assertEqual(desc.perturb_chol_loc(),
+                         (3*nb+3, (nvar*(nvar+1)) // 2))
+
+    def test_perturb_chol_raw(self):
+        const = self.constants
+        grid = self.grid
+        nb = grid.num_bins
+        dsd_deriv_names = ['lambda', 'nu']
+        dsd_deriv_scales = np.array([3., 4.])
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_variables = [
+            (wv0, LogTransform(), scale),
+            (wv6, LogTransform(), 2.*scale),
+            (wv9, LogTransform(), 3.*scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        desc = ModelStateDescriptor(const, grid,
+                                    dsd_deriv_names=dsd_deriv_names,
+                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    perturbed_variables=perturbed_variables,
+                                    perturbation_rate=perturbation_rate)
+        sl = desc.state_len()
+        raw = np.zeros((sl,))
+        num_chol = (nvar * (nvar + 1)) // 2
+        raw[-num_chol:] = np.linspace(1, num_chol, num_chol)
+        actual = desc.perturb_chol_raw(raw)
+        expected = np.zeros((nvar, nvar))
+        ic = 0
+        for i in range(nvar):
+            for j in range(i+1):
+                expected[i,j] = raw[-num_chol+ic]
+                ic += 1
+        self.assertEqual(actual.shape, expected.shape)
+        for i in range(nvar):
+            for j in range(nvar):
+                self.assertAlmostEqual(actual[i,j],
+                                       expected[i,j])
 
     def test_perturb_cov_raw(self):
         const = self.constants
@@ -2528,15 +2570,21 @@ class TestModelStateDescriptor(unittest.TestCase):
                                     perturbation_rate=perturbation_rate)
         sl = desc.state_len()
         raw = np.zeros((sl,))
-        raw[-nvar*nvar:] = np.linspace(1, nvar*nvar, nvar*nvar)
+        num_chol = (nvar * (nvar + 1)) // 2
+        raw[-num_chol:] = np.linspace(1, num_chol, num_chol)
         actual = desc.perturb_cov_raw(raw)
-        expected = np.reshape(np.linspace(1, nvar*nvar, nvar*nvar),
-                              (nvar, nvar))
+        expected = np.zeros((nvar, nvar))
+        ic = 0
+        for i in range(nvar):
+            for j in range(i+1):
+                expected[i,j] = raw[-num_chol+ic]
+                ic += 1
+        expected = expected @ expected.T
         self.assertEqual(actual.shape, expected.shape)
         for i in range(nvar):
             for j in range(nvar):
-                self.assertEqual(actual[i,j],
-                                 expected[i,j])
+                self.assertAlmostEqual(actual[i,j],
+                                       expected[i,j])
 
     def test_perturb_cov_construct_raw(self):
         const = ModelConstants(rho_water=1000.,
@@ -2575,6 +2623,7 @@ class TestModelStateDescriptor(unittest.TestCase):
         dsd_deriv[1,:] = dsd + 2.
         orig = np.reshape(np.linspace(1, nvar*nvar, nvar*nvar),
                           (nvar, nvar))
+        orig = orig + orig.T + 20. * np.eye(nvar)
         raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
                                  perturb_cov=orig)
         self.assertEqual(len(raw), desc.state_len())
@@ -2632,7 +2681,7 @@ class TestModelStateDescriptor(unittest.TestCase):
             raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
                                      perturb_cov=orig)
 
-    def test_perturb_cov_construct_raw_defaults_to_zero_cov(self):
+    def test_perturb_cov_construct_raw_defaults_to_near_zero_cov(self):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
@@ -2663,9 +2712,12 @@ class TestModelStateDescriptor(unittest.TestCase):
         self.assertEqual(len(raw), desc.state_len())
         actual = desc.perturb_cov_raw(raw)
         self.assertEqual(actual.shape, (nvar, nvar))
+        expected = 1.e-50 * np.eye(nvar)
         for i in range(nvar):
             for j in range(nvar):
-                self.assertEqual(actual[i,j], 0.)
+                self.assertAlmostEqual(actual[i,j],
+                                       expected[i,j],
+                                       places=60)
 
 
 class TestModelState(unittest.TestCase):
@@ -3466,7 +3518,8 @@ class TestModelState(unittest.TestCase):
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
         actual = state.time_derivative_raw([ktens])
-        expected = np.zeros((3*nb+3+nvar**2,))
+        nchol = (nvar * (nvar + 1)) // 2
+        expected = np.zeros((3*nb+3+nchol,))
         expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
         dsd_scale = self.constants.mass_conc_scale
@@ -3503,9 +3556,21 @@ class TestModelState(unittest.TestCase):
         cov_rate = jacobian @ perturb_cov_raw
         cov_rate += cov_rate.T
         cov_rate += desc.perturbation_rate
-        expected[-nvar*nvar:] = np.reshape(cov_rate, (nvar*nvar,))
-        self.assertEqual(len(actual), 3*nb+3 + nvar**2)
-        for i in range(3*nb+3 + nvar**2):
+        perturb_chol = desc.perturb_chol_raw(state.raw)
+        cov_rate = la.solve(perturb_chol, cov_rate)
+        cov_rate = np.transpose(la.solve(perturb_chol, cov_rate.T))
+        for i in range(nvar):
+            cov_rate[i,i] *= 0.5
+            for j in range(i+1, nvar):
+                cov_rate[i,j] = 0.
+        cov_rate = perturb_chol @ cov_rate
+        ic = 0
+        for i in range(nvar):
+            for j in range(i+1):
+                expected[-nchol+ic] = cov_rate[i,j]
+                ic += 1
+        self.assertEqual(len(actual), 3*nb+3 + nchol)
+        for i in range(3*nb+3 + nchol):
             self.assertAlmostEqual(actual[i], expected[i], places=9)
 
     def test_time_derivative_raw_with_perturb_cov_and_correction(self):
@@ -3551,7 +3616,8 @@ class TestModelState(unittest.TestCase):
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
         actual = state.time_derivative_raw([ktens])
-        expected = np.zeros((2*nb+2+nvar**2,))
+        nchol = (nvar * (nvar + 1)) // 2
+        expected = np.zeros((2*nb+2+nchol,))
         expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
         dsd_scale = self.constants.mass_conc_scale
@@ -3594,10 +3660,23 @@ class TestModelState(unittest.TestCase):
         cov_rate += desc.perturbation_rate
         cov_rate += (perturb_cov_projected - perturb_cov_raw) \
             / desc.correction_time
-        expected[-nvar*nvar:] = np.reshape(cov_rate, (nvar*nvar,))
-        self.assertEqual(len(actual), 2*nb+2 + nvar**2)
-        for i in range(2*nb+2 + nvar**2):
-            self.assertAlmostEqual(actual[i], expected[i], places=10)
+        perturb_chol = desc.perturb_chol_raw(state.raw)
+        cov_rate = la.solve(perturb_chol, cov_rate)
+        cov_rate = np.transpose(la.solve(perturb_chol, cov_rate.T))
+        for i in range(nvar):
+            cov_rate[i,i] *= 0.5
+            for j in range(i+1, nvar):
+                cov_rate[i,j] = 0.
+        cov_rate = perturb_chol @ cov_rate
+        nchol = (nvar * (nvar + 1)) // 2
+        ic = 0
+        for i in range(nvar):
+            for j in range(i+1):
+                expected[-nchol+ic] = cov_rate[i,j]
+                ic += 1
+        self.assertEqual(len(actual), 2*nb+2 + nchol)
+        for i in range(2*nb+2 + nchol):
+            self.assertAlmostEqual(actual[i], expected[i], places=9)
 
     def test_zeta_cov(self):
         grid = self.grid
@@ -3726,13 +3805,6 @@ class TestRK45Integrator(unittest.TestCase):
                                      perturbed_variables=perturbed_variables,
                                      perturbation_rate=perturbation_rate,
                                      correction_time=correction_time)
-        self.pc_neg_desc = ModelStateDescriptor(self.constants,
-                                     self.grid,
-                                     dsd_deriv_names=dsd_deriv_names,
-                                     dsd_deriv_scales=dsd_deriv_scales,
-                                     perturbed_variables=perturbed_variables,
-                                     perturbation_rate=-perturbation_rate,
-                                     correction_time=correction_time)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(self.grid, lam, nu)
@@ -3745,11 +3817,6 @@ class TestRK45Integrator(unittest.TestCase):
                                       fallout_deriv=fallout_deriv,
                                       perturb_cov=perturb_cov_init)
         self.pc_state = ModelState(self.pc_desc, self.pc_raw)
-        self.pc_neg_raw = \
-            self.pc_neg_desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
-                                           fallout_deriv=fallout_deriv,
-                                           perturb_cov=1.e-10 * np.eye(3))
-        self.pc_neg_state = ModelState(self.pc_neg_desc, self.pc_neg_raw)
 
     def test_integrate_raw(self):
         tscale = self.constants.time_scale
@@ -3834,16 +3901,6 @@ class TestRK45Integrator(unittest.TestCase):
             for j in range(len(expected.flat)):
                 self.assertAlmostEqual(actual.flat[j] / scale,
                                        expected.flat[j] / scale)
-
-    def test_integrate_getting_negative_perturb_cov_raises(self):
-        nb = self.grid.num_bins
-        dt = 1.e-5
-        num_step = 2
-        integrator = RK45Integrator(self.constants, dt)
-        with self.assertRaises(AssertionError):
-            exp = integrator.integrate(num_step*dt,
-                                       self.pc_neg_state,
-                                       [self.ktens])
 
 
 class TestTransform(unittest.TestCase):
