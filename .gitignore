@@ -130,3 +130,7 @@ dmypy.json
 
 # Kernel directory
 kernels/
+
+# Experiment directories
+convergence_experiments
+sensitivity_experiments
