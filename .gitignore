@@ -134,3 +134,7 @@ kernels/
 # Experiment directories
 convergence_experiments
 sensitivity_experiments
+
+# Plots output
+*.gif
+*.png
