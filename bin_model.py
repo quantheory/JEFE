@@ -2403,8 +2403,15 @@ class RK45Integrator(Integrator):
         raw_len = len(state.raw)
         rate_fun = lambda t, raw: \
             ModelState(state.desc, raw).time_derivative_raw(proc_tens)
+        atol = 1.e-6 * np.ones(raw_len)
+        pn = state.desc.perturb_num
+        pcidx, _ = state.desc.perturb_chol_loc()
+        for i in range(pn):
+            offset = (((i+1)*(i+2)) // 2) - 1
+            atol[pcidx+offset] = 1.e-300
         solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
-                             method='RK45', t_eval=times, max_step=self.dt)
+                             method='RK45', t_eval=times, max_step=self.dt,
+                             atol=atol)
         assert solbunch.status == 0, \
             "integration failed: " + solbunch.message
         if state.desc.perturb_num > 0:
