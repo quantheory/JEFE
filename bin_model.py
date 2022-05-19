@@ -1262,7 +1262,7 @@ class KernelTensor():
         DSD (+ fallout if included in the output).
         """
         nb = self.grid.num_bins
-        f_len = len(f.flat)
+        f_len = np.product(f.shape)
         assert nb <= f_len < nb + 2, "invalid f length: "+str(f_len)
         if out_flux is None:
             out_flux = f_len == nb + 1
