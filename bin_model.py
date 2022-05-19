@@ -2515,7 +2515,8 @@ class Experiment:
                     self.states[it].linear_func_raw(wvs[j,:],
                                                     derivative=True,
                                                     dfdt=self.ddsddt[it,:])
-            lf_cov[i,:,:] = deriv @ self.zeta_cov[it,:,:] @ deriv.T
+            lf_cov[i,:,:] = np.dot(np.dot(deriv, self.zeta_cov[it,:,:]),
+                                   deriv.T)
         if need_reshape:
             return lfs[:,0], lf_cov[:,0,0]
         else:
