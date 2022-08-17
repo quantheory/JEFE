@@ -3387,7 +3387,7 @@ class TestModelState(unittest.TestCase):
                 ic += 1
         self.assertEqual(len(actual), 3*nb+3 + nchol)
         for i in range(3*nb+3 + nchol):
-            self.assertAlmostEqual(actual[i], expected[i], places=9)
+            self.assertAlmostEqual(actual[i], expected[i], places=8)
 
     def test_time_derivative_raw_with_perturb_cov_and_correction(self):
         grid = self.grid

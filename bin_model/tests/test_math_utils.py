@@ -18,6 +18,7 @@ import unittest
 
 from scipy.integrate import quad
 
+# pylint: disable=wildcard-import,unused-wildcard-import
 from bin_model.math_utils import *
 from bin_model import ModelConstants, GeometricMassGrid
 
@@ -36,9 +37,12 @@ class TestLogUtilities(unittest.TestCase):
                                np.log(np.exp(2.) - np.exp(1.)))
 
     def test_sub_logs_invalid(self):
-        # Log of a negative number is not a valid real.
+        # Log of a negative number is not a single real value.
         with self.assertRaises(AssertionError):
             sub_logs(1., 2.)
+        # Log of zero is undefined.
+        with self.assertRaises(AssertionError):
+            sub_logs(2., 2.)
 
 
 class TestDilogarithm(unittest.TestCase):
