@@ -11,11 +11,12 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
+
 """Tests for constants module."""
 
 import unittest
 
-# pylint: disable=wildcard-import
+# pylint: disable-next=wildcard-import
 from bin_model.constants import *
 
 class TestModelConstants(unittest.TestCase):

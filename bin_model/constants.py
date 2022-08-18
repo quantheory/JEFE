@@ -16,7 +16,7 @@
 
 import numpy as np
 
-# pylint: disable=too-many-instance-attributes
+# pylint: disable-next=too-many-instance-attributes
 class ModelConstants:
     """
     Define relevant constants and scalings for the model.
@@ -32,26 +32,12 @@ class ModelConstants:
                                  nondimensionalization.
     time_scale (optional) - Time scale used for nondimensionalization.
 
-    Attributes:
-    rho_water
-    rho_air
-    std_diameter
+    Other attributes:
     std_mass - Mass in kg corresponding to a scaled mass of 1.
-    rain_d
     rain_m - `rain_d` converted to scaled mass.
-    mass_conc_scale
-    time_scale
-
-    Methods:
-    diameter_to_scaled_mass
-    scaled_mass_to_diameter
-    to_netcdf
-
-    Class methods:
-    from_netcdf
     """
 
-    # pylint: disable=too-many-arguments
+    # pylint: disable-next=too-many-arguments
     def __init__(self, rho_water, rho_air, std_diameter, rain_d,
                  mass_conc_scale=None, time_scale=None):
         if mass_conc_scale is None:

@@ -18,7 +18,7 @@ import unittest
 
 from scipy.integrate import quad
 
-# pylint: disable=wildcard-import,unused-wildcard-import
+# pylint: disable-next=wildcard-import,unused-wildcard-import
 from bin_model.math_utils import *
 from bin_model import ModelConstants, GeometricMassGrid
 
