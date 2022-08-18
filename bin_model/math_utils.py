@@ -23,7 +23,9 @@ def add_logs(x, y):
 
 def sub_logs(x, y):
     """Returns log(exp(x)-exp(y))."""
-    assert y < x, "y >= x in sub_logs"
+    if not y < x:
+        raise ValueError("second argument not less than first in sub_logs"
+                         f" (first {x} vs. second {y})")
     return x + np.log(1. - np.exp(y-x))
 
 def dilogarithm(x):
@@ -53,13 +55,22 @@ def lower_gamma_deriv(s, x, atol=1.e-14, rtol=1.e-14):
     This function is only valid for real x > 0 and real s. x and s may be
     numpy arrays of equal shape, or one may be an array and the other a scalar.
     """
-    assert np.all(x > 0.), "x must be positive"
-    assert atol > 0., "atol must be positive"
-    assert rtol > 0., "rtol must be positive"
+    # The following are written the way that they are so that NaN values will
+    # also cause ValueError to be raised.
+    if not np.all(np.isfinite(s)):
+        raise ValueError(f"s must be finite but is {s}")
+    if not np.all(x > 0.):
+        raise ValueError(f"x must be positive but is {x}")
+    if not atol > 0.: # pylint: disable=unneeded-not
+        raise ValueError(f"atol must be positive but is {atol}")
+    if not rtol > 0.: # pylint: disable=unneeded-not
+        raise ValueError(f"rtol must be positive but is {rtol}")
     if isinstance(x, np.ndarray):
         out = np.zeros(x.shape)
         if isinstance(s, np.ndarray):
-            assert x.shape == s.shape, "shapes of x and s do not match"
+            if s.shape != x.shape:
+                raise ValueError("shapes of s and x are incompatible"
+                                 f" ({s.shape} vs. {x.shape})")
             for i, x_i in enumerate(x.flat):
                 out.flat[i] = _lower_gamma_deriv_scalar(s.flat[i], x_i,
                                                         atol, rtol)
@@ -179,6 +190,8 @@ def _lower_gamma_deriv_high_x(s, x, l, atol, rtol):
         if np.any(num_vec > 1.e100) or np.any(den_vec > 1.e100):
             num_vec /= 1.e100
             den_vec /= 1.e100
+        # This rearrangement of the formula has the benefit of avoiding overflow
+        # errors, though it is probably not the optimal choice.
         y = dgamma - num_vec[3]/den_vec[2] \
             + (num_vec[2]/den_vec[2]) * (den_vec[3]/den_vec[2])
     return y
