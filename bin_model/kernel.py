@@ -28,6 +28,8 @@ def beard_v(const, d):
 
     Returned value is velocity according to Beard (1976) in meters/second, at
     standard temperature and pressure.
+
+    For diameters over 7 millimeters, a constant value is returned.
     """
     d = min(7.e-3, d)
     eta = 1.818e-5
@@ -67,6 +69,9 @@ def sc_efficiency(d1, d2):
 
     Returned value is collection efficiency according to Scott and Chen (1970),
     with the typo correction given by Ziv and Levin (1974).
+
+    For collector radii below 10 microns, the efficiency is calculated as if the
+    collector radius was 10 microns, with the same ratio between particle sizes.
     """
     al = 0.5e6 * max(d1, d2)
     asm = 0.5e6 * min(d1, d2)
@@ -127,10 +132,12 @@ class Kernel:
          - If `ly_bound[0] >= lz_bound[1]`, i.e. the entire y bin is above the z
            bin, then all returned values are `None`.
         """
-        assert ly_bound[1] > ly_bound[0], \
-            "upper y bin limit not larger than lower y bin limit"
-        assert lz_bound[1] > lz_bound[0], \
-            "upper z bin limit not larger than lower z bin limit"
+        if not ly_bound[1] > ly_bound[0]:
+            raise ValueError("upper y bin limit not larger than"
+                             " lower y bin limit")
+        if not lz_bound[1] > lz_bound[0]:
+            raise ValueError("upper z bin limit not larger than"
+                             " lower z bin limit")
         if lz_bound[0] > ly_bound[0]:
             bottom_left = sub_logs(lz_bound[0], ly_bound[0])
         else:
@@ -163,7 +170,8 @@ class Kernel:
 
         This function also checks that btype is a valid value (0 to 3).
         """
-        assert 0 <= btype < 4, "invalid btype in min_max_ly"
+        if not 0 <= btype < 4:
+            raise ValueError("invalid btype")
         if btype % 2 == 0:
             min_ly = y_bound_p[0]
         else:
@@ -189,8 +197,9 @@ class Kernel:
         If the integration region is of size zero, lists of size zero are
         returned.
         """
-        assert lx_bound[1] > lx_bound[0], \
-            "upper x bin limit not larger than lower x bin limit"
+        if not lx_bound[1] > lx_bound[0]:
+            raise ValueError("upper x bin limit not larger than"
+                             " lower x bin limit")
         (bl, tl, br, tr) = self.find_corners(ly_bound, lz_bound)
         # Cases where there is no region of integration.
         if (br is None) or (tl is not None and lx_bound[1] <= tl) \
@@ -307,7 +316,7 @@ class Kernel:
         if kernel_type == 'Hall':
             efficiency_name = netcdf_file.read_characters('efficiency_name')
             return HallKernel(constants, efficiency_name)
-        assert False, "unrecognized kernel_type in file"
+        raise RuntimeError("unrecognized kernel_type in file")
 
 
 class LongKernel(Kernel):
@@ -339,12 +348,12 @@ class LongKernel(Kernel):
     # pylint: disable-next=too-many-arguments
     def __init__(self, constants, kc=None, kr=None, kc_cgs=None, kc_si=None,
                  kr_cgs=None, kr_si=None, rain_m=None):
-        assert ((kc is None) and (kc_cgs is None)) \
-                or ((kc is None) and (kc_si is None)) \
-                or ((kc_cgs is None) and (kc_si is None))
-        assert ((kr is None) and (kr_cgs is None)) \
-                or ((kr is None) and (kr_si is None)) \
-                or ((kr_cgs is None) and (kr_si is None))
+        kc_arg_count = [kc is None, kc_cgs is None, kc_si is None].count(False)
+        if kc_arg_count > 1:
+            raise RuntimeError("tried to specify multiple kc values")
+        kr_arg_count = [kr is None, kr_cgs is None, kr_si is None].count(False)
+        if kr_arg_count > 1:
+            raise RuntimeError("tried to specify multiple kr values")
         if kc_cgs is None:
             kc_cgs = 9.44e9
         if kc_si is None:
@@ -384,7 +393,8 @@ class LongKernel(Kernel):
          - If btype = 2, g(a) = a and h(b) = p(b).
          - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
-        assert 0 <= btype < 4, "invalid btype in _integral_cloud"
+        if not 0 <= btype < 4:
+            raise ValueError("invalid btype")
         etoa = np.exp(y_bound_p[0])
         etob = np.exp(y_bound_p[1])
         etolxm = np.exp(lx_bound[0])
@@ -422,7 +432,8 @@ class LongKernel(Kernel):
          - If btype = 2, g(a) = a and h(b) = p(b).
          - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
-        assert 0 <= btype < 4, "invalid btype in _integral_rain"
+        if not 0 <= btype < 4:
+            raise ValueError("invalid btype")
         etoa = np.exp(y_bound_p[0])
         etob = np.exp(y_bound_p[1])
         etolxm = np.exp(lx_bound[0])
@@ -548,7 +559,8 @@ class HallKernel(Kernel):
         if efficiency_name == 'ScottChen':
             self.efficiency = sc_efficiency
         else:
-            assert False, "bad value for efficiency_name: " + efficiency_name
+            raise ValueError("bad value for efficiency_name: "
+                             + efficiency_name)
 
     def kernel_d(self, d1, d2):
         """Calculate kernel function as a function of particle diameters."""
@@ -586,7 +598,8 @@ class HallKernel(Kernel):
          - If btype = 2, g(a) = a and h(b) = p(b).
          - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
-        assert 0 <= btype < 4, "invalid btype in kernel_integral"
+        if not 0 <= btype < 4:
+            raise ValueError("invalid btype")
         tol = 1.e-12
         # For efficiency and stability, refuse to bother with extremely
         # small ranges of particle sizes.

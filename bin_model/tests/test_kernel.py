@@ -12,6 +12,8 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+# pylint: disable=protected-access, too-many-public-methods
+
 """Tests for kernel module."""
 
 import unittest
@@ -29,27 +31,35 @@ class TestBeardV(unittest.TestCase):
     Test beard_v function.
     """
     def setUp(self):
+        """Set up constants for evaluating beard_v."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
                                         std_diameter=1.e-4,
                                         rain_d=1.e-4)
 
     def test_low_beard_v(self):
+        """Check a beard_v value at the low end of the size range."""
         const = self.constants
         self.assertAlmostEqual(beard_v(const, 1.e-5),
                                0.0030440)
 
     def test_medium_beard_v(self):
+        """Check a beard_v value in the middle of the size range."""
         const = self.constants
         self.assertAlmostEqual(beard_v(const, 6.e-4),
                                2.4455837)
 
     def test_high_beard_v(self):
+        """Check a beard_v value at the high end of the size range."""
         const = self.constants
         self.assertAlmostEqual(beard_v(const, 2.e-3),
                                6.5141471)
 
     def test_very_high_beard_v(self):
+        """Check a beard_v value above the high end of the range.
+
+        For diameters above 7 mm, this function returns a constant.
+        """
         const = self.constants
         self.assertAlmostEqual(beard_v(const, 7.e-3),
                                beard_v(const, 7.001e-3))
@@ -63,6 +73,7 @@ class TestSCEfficiency(unittest.TestCase):
     """
 
     def test_sc_efficiency(self):
+        """Test the Scott-Chen collection efficiency formula."""
         d1 = 50.e-6
         x = 0.7
         d2 = x * d1
@@ -72,6 +83,7 @@ class TestSCEfficiency(unittest.TestCase):
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
     def test_sc_efficiency_low_diameter(self):
+        """Test the Scott-Chen formula's extrapolation to small radii."""
         d1 = 5.e-6
         x = 0.7
         d2 = x * d1
@@ -98,13 +110,13 @@ class TestKernel(unittest.TestCase):
         ly2 = 0.
         lz1 = 2.
         lz2 = 3.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             actual = kernel.find_corners((ly1, ly2), (lz1, lz2))
         ly1 = 0.
         ly2 = 1.
         lz1 = 3.
         lz2 = 2.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             actual = kernel.find_corners((ly1, ly2), (lz1, lz2))
 
     def test_find_corners_bins_separated(self):
@@ -204,9 +216,9 @@ class TestKernel(unittest.TestCase):
         b = 3.
         lxm = 0.
         lxp = 1.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.min_max_ly((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.min_max_ly((lxm, lxp), (a, b), btype=4)
 
     def test_min_max_ly(self):
@@ -237,19 +249,19 @@ class TestKernel(unittest.TestCase):
         ly2 = 1.
         lz1 = 2.
         lz2 = 3.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         lx1 = 0.
         lx2 = 1.
         ly1 = 0.
         ly2 = -1.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         ly1 = 0.
         ly2 = 1.
         lz1 = 3.
         lz2 = 2.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
 
     def test_get_lxs_and_btypes_wide_lx(self):
@@ -475,7 +487,7 @@ class TestKernel(unittest.TestCase):
 
 
 def reference_long_cloud(a, b, lxm, lxp):
-    """Reference implementation of double integral used for Long's kernel.
+    r"""Reference implementation of double integral used for Long's kernel.
 
     The definite integral being computed is:
 
@@ -486,7 +498,7 @@ def reference_long_cloud(a, b, lxm, lxp):
         + (np.exp(b)-np.exp(a))*(lxp-lxm)
 
 def reference_long_rain(a, b, lxm, lxp):
-    """Reference implementation of double integral used for Long's kernel.
+    r"""Reference implementation of double integral used for Long's kernel.
 
     The definite integral being computed is:
 
@@ -537,19 +549,19 @@ class TestLongKernel(unittest.TestCase):
                                         rain_d=1.e-4)
 
     def test_fail_if_two_kcs(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kc_cgs=1., kc_si=1.)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kc_cgs=1., kc=1.)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kc=1., kc_si=1.)
 
     def test_fail_if_two_krs(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kr_cgs=1., kr_si=1.)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kr_cgs=1., kr=1.)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kr=1., kr_si=1.)
 
     def test_kc(self):
@@ -609,9 +621,9 @@ class TestLongKernel(unittest.TestCase):
         b = 0.
         lxm = -1.
         lxp = 0.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=4)
 
     def test_integral_cloud_type_0(self):
@@ -666,9 +678,9 @@ class TestLongKernel(unittest.TestCase):
         b = 0.
         lxm = -1.
         lxp = 0.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             actual = kernel._integral_rain((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             actual = kernel._integral_rain((lxm, lxp), (a, b), btype=4)
 
     def test_integral_rain_type_0(self):
@@ -723,9 +735,9 @@ class TestLongKernel(unittest.TestCase):
         b = 0.
         lxm = -1.
         lxp = 0.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.kernel_integral((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.kernel_integral((lxm, lxp), (a, b), btype=4)
 
     def test_kernel_integral_cloud(self):
@@ -963,7 +975,7 @@ class TestHallKernel(unittest.TestCase):
         self.kernel = HallKernel(self.constants, 'ScottChen')
 
     def test_bad_efficiency_string_raises_error(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             HallKernel(self.constants, 'nonsense')
 
     def test_kernel_d(self):
@@ -996,9 +1008,9 @@ class TestHallKernel(unittest.TestCase):
         b = 0.
         lxm = -1.
         lxp = 0.
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.kernel_integral((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             kernel.kernel_integral((lxm, lxp), (a, b), btype=4)
 
     def test_kernel_integral(self):

@@ -3391,7 +3391,7 @@ class TestNetcdfFile(unittest.TestCase):
                                          'nonsense',
                                          'kernel_type_str_len',
                                          'Type of kernel')
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             self.NetcdfFile.read_kernel(self.constants)
 
     def test_mass_grid_io(self):
