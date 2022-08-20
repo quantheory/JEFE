@@ -14,6 +14,8 @@
 
 """Code for construction of kernels for use in JEFE's bin model."""
 
+import enum
+
 import numpy as np
 from scipy.integrate import dblquad
 
@@ -99,6 +101,44 @@ def sc_efficiency(d1, d2):
     return ((1. + x - x1_term - u2_term) / (1. + x)) **2
 
 
+class BoundType(enum.Flag):
+    """Flags for boundaries used for definite double integrals.
+
+    In this module, there are a number of integrals over the l_x and l_y
+    coordinates, which are the natural logarithms of mass coordinates x and y,
+    respectively. Integration regions are decomposed in to pieces where the l_x
+    (outer) integral has constant bounds, and boundaries over the l_y coordinate
+    are either constants, or have the form:
+
+        log(e^{c} - e^{l_x})
+
+    for some constant c.
+
+    This enumeration specifies the form of the bounds for such an integral, and
+    can take on four values:
+
+        CONSTANT: Both l_y bounds are constant.
+        LOWER_VARIES: The lower bound varies and the upper bound is constant.
+        UPPER_VARIES: The upper bound varies and the lower bound is constant.
+        BOTH_VARY: Both lower and upper bounds vary.
+
+    The lower_varies and upper_varies methods provide a more legible way of
+    querying whether each bound varies.
+    """
+    CONSTANT = 0
+    LOWER_VARIES = enum.auto()
+    UPPER_VARIES = enum.auto()
+    BOTH_VARY = LOWER_VARIES | UPPER_VARIES
+
+    def lower_varies(self):
+        """Query whether the lower boundary varies for this BoundType."""
+        return bool(self & BoundType.LOWER_VARIES)
+
+    def upper_varies(self):
+        """Query whether the upper boundary varies for this BoundType."""
+        return bool(self & BoundType.UPPER_VARIES)
+
+
 class Kernel:
     """
     Represent a collision kernel for the bin model.
@@ -170,16 +210,14 @@ class Kernel:
 
         This function also checks that btype is a valid value (0 to 3).
         """
-        if not 0 <= btype < 4:
-            raise ValueError("invalid btype")
-        if btype % 2 == 0:
-            min_ly = y_bound_p[0]
-        else:
+        if btype.lower_varies():
             min_ly = sub_logs(y_bound_p[0], lx_bound[1])
-        if btype < 2:
-            max_ly = y_bound_p[1]
         else:
+            min_ly = y_bound_p[0]
+        if btype.upper_varies():
             max_ly = sub_logs(y_bound_p[1], lx_bound[0])
+        else:
+            max_ly = y_bound_p[1]
         return (min_ly, max_ly)
 
     def get_lxs_and_btypes(self, lx_bound, ly_bound, lz_bound):
@@ -210,10 +248,14 @@ class Kernel:
         # lx1 to remove this part of the list.
         if bl is None or (tr is not None and bl <= tr):
             lxs = [tl, bl, tr, br]
-            btypes = [1, 0, 2]
+            btypes = [BoundType.LOWER_VARIES,
+                      BoundType.CONSTANT,
+                      BoundType.UPPER_VARIES]
         else:
             lxs = [tl, tr, bl, br]
-            btypes = [1, 3, 2]
+            btypes = [BoundType.LOWER_VARIES,
+                      BoundType.BOTH_VARY,
+                      BoundType.UPPER_VARIES]
         if lxs[0] is None or lx_bound[0] > lxs[0]:
             for _ in range(len(btypes)):
                 if lxs[1] is None or lx_bound[0] > lxs[1]:
@@ -232,26 +274,26 @@ class Kernel:
         return lxs, btypes
 
     def get_y_bound_p(self, ly_bound, lz_bound, btypes):
-        """Find ly bound parameters from y and z bin bounds and btypes.
+        """Find y bound parameters from y and z bin bounds and btypes.
 
         Arguments:
         ly_bound - Lower and upper bounds of y bin.
         lz_bound - Lower and upper bounds of z bin.
         btypes - List of boundary types for l_y integrals.
 
-        Returns a tuple `(avals, bvals)`, where avals is a list of lower bound
-        parameters and bvals is a list of upper bound parameters.
+        Returns an array of shape `(len(btypes), 2)`, which contains the lower
+        and upper y bound parameters for each btype in the list.
         """
         y_bound_p = np.zeros((len(btypes), 2))
         for i, btype in enumerate(btypes):
-            if btype % 2 == 0:
-                y_bound_p[i,0] = ly_bound[0]
-            else:
+            if btype.lower_varies():
                 y_bound_p[i,0] = lz_bound[0]
-            if btype < 2:
-                y_bound_p[i,1] = ly_bound[1]
             else:
+                y_bound_p[i,0] = ly_bound[0]
+            if btype.upper_varies():
                 y_bound_p[i,1] = lz_bound[1]
+            else:
+                y_bound_p[i,1] = ly_bound[1]
         return y_bound_p
 
     def kernel_integral(self, lx_bound, y_bound_p, btype):
@@ -265,14 +307,6 @@ class Kernel:
         If K_f is the scaled kernel function, this returns:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
-
-        Boundary functions can be either constant or of the form
-            p(c) = log(e^{c} - e^{l_x})
-        This is determined by btype:
-         - If btype = 0, g(a) = a and h(b) = b.
-         - If btype = 1, g(a) = p(a) and h(b) = b.
-         - If btype = 2, g(a) = a and h(b) = p(b).
-         - If btype = 3, g(a) = p(a) and h(b) = p(b).
 
         This docstring is attached to an unimplemented function on the base
         Kernel class. Child classes should override this with an actual
@@ -384,32 +418,22 @@ class LongKernel(Kernel):
         The definite integral being computed is:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} (e^{2l_x-l_y} + e^{l_y}) dl_y dl_x
-
-        Boundary functions can be either constant or of the form
-            p(c) = log(e^{c} - e^{l_x})
-        This is determined by btype:
-         - If btype = 0, g(a) = a and h(b) = b.
-         - If btype = 1, g(a) = p(a) and h(b) = b.
-         - If btype = 2, g(a) = a and h(b) = p(b).
-         - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
-        if not 0 <= btype < 4:
-            raise ValueError("invalid btype")
         etoa = np.exp(y_bound_p[0])
         etob = np.exp(y_bound_p[1])
         etolxm = np.exp(lx_bound[0])
         etolxp = np.exp(lx_bound[1])
         lx_width = lx_bound[1] - lx_bound[0]
-        if btype < 2:
-            upper = etob * lx_width - 0.5 * (etolxp**2 - etolxm**2) / etob
-        else:
-            upper = etob * np.log((etob - etolxp)/(etob - etolxm)) \
-                    + etob * lx_width
-        if btype % 2 == 0:
-            lower = etoa * lx_width - 0.5 * (etolxp**2 - etolxm**2) / etoa
-        else:
+        if btype.lower_varies():
             lower = etoa * np.log((etoa - etolxp)/(etoa - etolxm)) \
                     + etoa * lx_width
+        else:
+            lower = etoa * lx_width - 0.5 * (etolxp**2 - etolxm**2) / etoa
+        if btype.upper_varies():
+            upper = etob * np.log((etob - etolxp)/(etob - etolxm)) \
+                    + etob * lx_width
+        else:
+            upper = etob * lx_width - 0.5 * (etolxp**2 - etolxm**2) / etob
         return self.kc * (upper - lower)
 
     def _integral_rain(self, lx_bound, y_bound_p, btype):
@@ -423,34 +447,24 @@ class LongKernel(Kernel):
         The definite integral being computed is:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} (e^{l_x-l_y} + 1) dl_y dl_x
-
-        Boundary functions can be either constant or of the form
-            p(c) = log(e^{c} - e^{l_x})
-        This is determined by btype:
-         - If btype = 0, g(a) = a and h(b) = b.
-         - If btype = 1, g(a) = p(a) and h(b) = b.
-         - If btype = 2, g(a) = a and h(b) = p(b).
-         - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
-        if not 0 <= btype < 4:
-            raise ValueError("invalid btype")
         etoa = np.exp(y_bound_p[0])
         etob = np.exp(y_bound_p[1])
         etolxm = np.exp(lx_bound[0])
         etolxp = np.exp(lx_bound[1])
         lx_width = lx_bound[1] - lx_bound[0]
-        if btype < 2:
-            upper = y_bound_p[1] * lx_width - (etolxp - etolxm) / etob
-        else:
-            upper = y_bound_p[1] * lx_width \
-                + np.log((etob - etolxp)/(etob - etolxm)) \
-                - dilogarithm(etolxp / etob) + dilogarithm(etolxm / etob)
-        if btype % 2 == 0:
-            lower = y_bound_p[0] * lx_width - (etolxp - etolxm) / etoa
-        else:
+        if btype.lower_varies():
             lower = y_bound_p[0] * lx_width \
                 + np.log((etoa - etolxp)/(etoa - etolxm)) \
                 - dilogarithm(etolxp / etoa) + dilogarithm(etolxm / etoa)
+        else:
+            lower = y_bound_p[0] * lx_width - (etolxp - etolxm) / etoa
+        if btype.upper_varies():
+            upper = y_bound_p[1] * lx_width \
+                + np.log((etob - etolxp)/(etob - etolxm)) \
+                - dilogarithm(etolxp / etob) + dilogarithm(etolxm / etob)
+        else:
+            upper = y_bound_p[1] * lx_width - (etolxp - etolxm) / etob
         return self.kr * (upper - lower)
 
     def kernel_integral(self, lx_bound, y_bound_p, btype):
@@ -464,14 +478,6 @@ class LongKernel(Kernel):
         If K_f is the scaled kernel function, this returns:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
-
-        Boundary functions can be either constant or of the form
-            p(c) = log(e^{c} - e^{l_x})
-        This is determined by btype:
-         - If btype = 0, g(a) = a and h(b) = b.
-         - If btype = 1, g(a) = p(a) and h(b) = b.
-         - If btype = 2, g(a) = a and h(b) = p(b).
-         - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
         # Note that this function also checks that the btype is in bounds.
         min_ly, max_ly = self.min_max_ly(lx_bound, y_bound_p, btype)
@@ -495,9 +501,8 @@ class LongKernel(Kernel):
             return cloud_part + rain_part
         # At this point, it is guaranteed that the y bin spans both categories
         # while the x bin does not.
-        btype_parity = btype % 2
         # Handle any part of the x range that uses rain formula only.
-        if btype_parity == 1 \
+        if btype.lower_varies() \
            and y_bound_p[0] > add_logs(lx_bound[0], self.log_rain_m):
             lx_low = sub_logs(y_bound_p[0], self.log_rain_m)
             start = self._integral_rain((lx_bound[0], lx_low), y_bound_p,
@@ -506,7 +511,7 @@ class LongKernel(Kernel):
             lx_low = lx_bound[0]
             start = 0.
         # Handle any part of the x range that uses cloud formula only.
-        if btype >= 2 \
+        if btype.upper_varies() \
            and y_bound_p[1] < add_logs(lx_bound[1], self.log_rain_m):
             lx_high = sub_logs(y_bound_p[1], self.log_rain_m)
             start += self._integral_cloud((lx_high, lx_bound[1]), y_bound_p,
@@ -515,10 +520,12 @@ class LongKernel(Kernel):
             lx_high = lx_bound[1]
         cloud_part = self._integral_cloud((lx_low, lx_high),
                                           (y_bound_p[0], self.log_rain_m),
-                                          btype=btype_parity)
+                                          btype=(btype
+                                                 & BoundType.LOWER_VARIES))
         rain_part = self._integral_rain((lx_low, lx_high),
                                         (self.log_rain_m, y_bound_p[1]),
-                                        btype=(btype ^ btype_parity))
+                                        btype=(btype
+                                               & BoundType.UPPER_VARIES))
         return start + cloud_part + rain_part
 
     def to_netcdf(self, netcdf_file):
@@ -589,17 +596,7 @@ class HallKernel(Kernel):
         If K_f is the scaled kernel function, this returns:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
-
-        Boundary functions can be either constant or of the form
-            p(c) = log(e^{c} - e^{l_x})
-        This is determined by btype:
-         - If btype = 0, g(a) = a and h(b) = b.
-         - If btype = 1, g(a) = p(a) and h(b) = b.
-         - If btype = 2, g(a) = a and h(b) = p(b).
-         - If btype = 3, g(a) = p(a) and h(b) = p(b).
         """
-        if not 0 <= btype < 4:
-            raise ValueError("invalid btype")
         tol = 1.e-12
         # For efficiency and stability, refuse to bother with extremely
         # small ranges of particle sizes.
@@ -607,16 +604,16 @@ class HallKernel(Kernel):
             return 0.
         def f(ly, lx):
             return np.exp(lx) * self.kernel_lx(lx, ly)
-        if btype % 2 == 0:
-            g = y_bound_p[0]
-        else:
+        if btype.lower_varies():
             def g(lx):
                 return sub_logs(y_bound_p[0], lx)
-        if btype < 2:
-            h = y_bound_p[1]
         else:
+            g = y_bound_p[0]
+        if btype.upper_varies():
             def h(lx):
                 return sub_logs(y_bound_p[1], lx)
+        else:
+            h = y_bound_p[1]
         y, _ = dblquad(f, lx_bound[0], lx_bound[1], g, h)
         return y
 

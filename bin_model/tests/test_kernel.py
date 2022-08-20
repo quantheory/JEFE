@@ -25,6 +25,12 @@ from bin_model.constants import ModelConstants
 # pylint: disable-next=wildcard-import
 from bin_model.kernel import *
 
+# Because this module requires specifying a large number of BoundType enums,
+# give them short names here.
+CNST = BoundType.CONSTANT
+LOVA = BoundType.LOWER_VARIES
+UPVA = BoundType.UPPER_VARIES
+BOVA = BoundType.BOTH_VARY
 
 class TestBeardV(unittest.TestCase):
     """
@@ -105,6 +111,7 @@ class TestKernel(unittest.TestCase):
         self.kernel = Kernel()
 
     def test_find_corners_invalid(self):
+        """Check find_corners raises an error given bad y or z bound values."""
         kernel = self.kernel
         ly1 = 1.
         ly2 = 0.
@@ -120,6 +127,7 @@ class TestKernel(unittest.TestCase):
             actual = kernel.find_corners((ly1, ly2), (lz1, lz2))
 
     def test_find_corners_bins_separated(self):
+        """Check find_corners works when y and z bins do not overlap."""
         kernel = self.kernel
         ly1 = 0.
         ly2 = 1.
@@ -131,6 +139,7 @@ class TestKernel(unittest.TestCase):
         self.assertAlmostEqual(actual, expected)
 
     def test_find_corners_bins_overlap(self):
+        """Check find_corners works when y and z bins overlap."""
         kernel = self.kernel
         ly1 = 0.
         ly2 = 1.
@@ -150,7 +159,8 @@ class TestKernel(unittest.TestCase):
         actual = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertAlmostEqual(actual, expected)
 
-    def test_find_corners_large_y2(self):
+    def test_find_corners_y_encloses_z(self):
+        """Check find_corners works when z bin is a subset of the y bin."""
         kernel = self.kernel
         ly1 = 0.
         ly2 = 3.
@@ -170,7 +180,8 @@ class TestKernel(unittest.TestCase):
         actual = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertAlmostEqual(actual, expected)
 
-    def test_find_corners_large_y1(self):
+    def test_find_corners_z_encloses_y(self):
+        """Check find_corners works when y bin is a subset of the z bin."""
         kernel = self.kernel
         ly1 = 0.
         ly2 = 2.
@@ -191,6 +202,7 @@ class TestKernel(unittest.TestCase):
         self.assertAlmostEqual(actual, expected)
 
     def test_find_corners_empty_set(self):
+        """Check find_corners works when y bin is larger than the z bin."""
         kernel = self.kernel
         ly1 = 1.
         ly2 = 3.
@@ -210,17 +222,6 @@ class TestKernel(unittest.TestCase):
         actual = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertAlmostEqual(actual, expected)
 
-    def test_min_max_ly_asserts_valid_btype(self):
-        kernel = self.kernel
-        a = 2.
-        b = 3.
-        lxm = 0.
-        lxp = 1.
-        with self.assertRaises(ValueError):
-            kernel.min_max_ly((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(ValueError):
-            kernel.min_max_ly((lxm, lxp), (a, b), btype=4)
-
     def test_min_max_ly(self):
         kernel = self.kernel
         a = 2.
@@ -228,16 +229,20 @@ class TestKernel(unittest.TestCase):
         lxm = 0.
         lxp = 1.
         expected = (a, b)
-        actual = kernel.min_max_ly((lxm, lxp), (a, b), btype=0)
+        actual = kernel.min_max_ly((lxm, lxp), (a, b),
+                                   btype=CNST)
         self.assertEqual(actual, expected)
         expected = (sub_logs(a, lxp), b)
-        actual = kernel.min_max_ly((lxm, lxp), (a, b), btype=1)
+        actual = kernel.min_max_ly((lxm, lxp), (a, b),
+                                   btype=LOVA)
         self.assertEqual(actual, expected)
         expected = (a, sub_logs(b, lxm))
-        actual = kernel.min_max_ly((lxm, lxp), (a, b), btype=2)
+        actual = kernel.min_max_ly((lxm, lxp), (a, b),
+                                   btype=UPVA)
         self.assertEqual(actual, expected)
         expected = (sub_logs(a, lxp), sub_logs(b, lxm))
-        actual = kernel.min_max_ly((lxm, lxp), (a, b), btype=3)
+        actual = kernel.min_max_ly((lxm, lxp), (a, b),
+                                   btype=BOVA)
         self.assertEqual(actual, expected)
 
     def test_get_lxs_and_btypes_assertions(self):
@@ -278,7 +283,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [tl, bl, tr, br])
-        self.assertListEqual(actual_btypes, [1, 0, 2])
+        self.assertListEqual(actual_btypes,[LOVA, CNST, UPVA])
         ly1 = 0.
         ly2 = 1.
         lz1 = 1.01
@@ -287,7 +292,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [tl, tr, bl, br])
-        self.assertListEqual(actual_btypes, [1, 3, 2])
+        self.assertListEqual(actual_btypes, [LOVA, BOVA, UPVA])
 
     def test_get_lxs_and_btypes_no_overlap(self):
         # Cases where coalescence between the x and y bins will never produce
@@ -328,21 +333,21 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, bl, tr, br])
-        self.assertListEqual(actual_btypes, [1, 0, 2])
+        self.assertListEqual(actual_btypes, [LOVA, CNST, UPVA])
         # x bound large enough to cut off middle region
         lx1 = 1.
         actual_lxs, actual_btypes = \
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, tr, br])
-        self.assertListEqual(actual_btypes, [0, 2])
+        self.assertListEqual(actual_btypes, [CNST, UPVA])
         # x bound large enough to cut off right region
         lx1 = 1.7
         actual_lxs, actual_btypes = \
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, br])
-        self.assertListEqual(actual_btypes, [2])
+        self.assertListEqual(actual_btypes, [UPVA])
 
     def test_get_lxs_and_btypes_upper_lx(self):
         # Cases where the upper lx bound affects the integration region.
@@ -358,14 +363,14 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [tl, bl, tr, lx2])
-        self.assertListEqual(actual_btypes, [1, 0, 2])
+        self.assertListEqual(actual_btypes, [LOVA, CNST, UPVA])
         # x small enough to cut off middle region
         lx2 = 1.
         actual_lxs, actual_btypes = \
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [tl, bl, lx2])
-        self.assertListEqual(actual_btypes, [1, 0])
+        self.assertListEqual(actual_btypes, [LOVA, CNST])
 
     def test_get_lxs_and_btypes_missing_corners(self):
         # Cases where some of the corners don't exist (go to -Infinity).
@@ -381,7 +386,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, bl, tr, br])
-        self.assertListEqual(actual_btypes, [1, 0, 2])
+        self.assertListEqual(actual_btypes, [LOVA, CNST, UPVA])
         # No bottom left corner.
         ly1 = 0.
         ly2 = 1.
@@ -391,7 +396,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, tr, br])
-        self.assertListEqual(actual_btypes, [0, 2])
+        self.assertListEqual(actual_btypes, [CNST, UPVA])
         # No top right corner.
         ly1 = 0.
         ly2 = 2.
@@ -401,7 +406,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, bl, br])
-        self.assertListEqual(actual_btypes, [3, 2])
+        self.assertListEqual(actual_btypes, [BOVA, UPVA])
         # No bottom left or top right corner.
         ly1 = 0.
         ly2 = 1.
@@ -411,7 +416,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, br])
-        self.assertListEqual(actual_btypes, [2])
+        self.assertListEqual(actual_btypes, [UPVA])
         # No bottom left or top right corner, upper x bound matters.
         lx2 = 0.
         ly1 = 0.
@@ -422,7 +427,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, lx2])
-        self.assertListEqual(actual_btypes, [2])
+        self.assertListEqual(actual_btypes, [UPVA])
         # No region at all.
         ly1 = 1.
         ly2 = 2.
@@ -447,7 +452,7 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [tl, bl, lx2])
-        self.assertListEqual(actual_btypes, [1, 0])
+        self.assertListEqual(actual_btypes, [LOVA, CNST])
         # Test specifying an infinite upper bound for lz when the lower bound
         # is the same as ly's.
         kernel = self.kernel
@@ -461,11 +466,11 @@ class TestKernel(unittest.TestCase):
             kernel.get_lxs_and_btypes((lx1, lx2), (ly1, ly2), (lz1, lz2))
         bl, tl, br, tr = kernel.find_corners((ly1, ly2), (lz1, lz2))
         self.assertListEqual(actual_lxs, [lx1, lx2])
-        self.assertListEqual(actual_btypes, [0])
+        self.assertListEqual(actual_btypes, [CNST])
 
     def test_get_y_bound_p(self):
         kernel = self.kernel
-        btypes = [0, 1, 2, 3]
+        btypes = [CNST, LOVA, UPVA, BOVA]
         ly1 = 0.
         ly2 = 1.
         lz1 = 2.
@@ -615,17 +620,6 @@ class TestLongKernel(unittest.TestCase):
         # Original Long kernel value.
         self.assertAlmostEqual(kernel.log_rain_m, 0.)
 
-    def test_integral_cloud_btype_bounds(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        with self.assertRaises(ValueError):
-            actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(ValueError):
-            actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=4)
-
     def test_integral_cloud_type_0(self):
         kernel = LongKernel(self.constants)
         a = -1.
@@ -635,7 +629,7 @@ class TestLongKernel(unittest.TestCase):
         expected = reference_long_cloud(a, 1., lxm, lxp) \
                     - reference_long_cloud(b, 1., lxm, lxp)
         expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=0)
+        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_integral_cloud_type_1(self):
@@ -646,7 +640,7 @@ class TestLongKernel(unittest.TestCase):
         lxp = -2.
         expected = -reference_long_cloud(b, a, lxm, lxp)
         expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=1)
+        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_integral_cloud_type_2(self):
@@ -657,7 +651,7 @@ class TestLongKernel(unittest.TestCase):
         lxp = -1.
         expected = reference_long_cloud(a, b, lxm, lxp)
         expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=2)
+        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_integral_cloud_type_3(self):
@@ -669,19 +663,8 @@ class TestLongKernel(unittest.TestCase):
         expected = reference_long_cloud(1., b, lxm, lxp) \
                     - reference_long_cloud(1., a, lxm, lxp)
         expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=3)
+        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=15)
-
-    def test_integral_rain_btype_bounds(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        with self.assertRaises(ValueError):
-            actual = kernel._integral_rain((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(ValueError):
-            actual = kernel._integral_rain((lxm, lxp), (a, b), btype=4)
 
     def test_integral_rain_type_0(self):
         kernel = LongKernel(self.constants)
@@ -692,7 +675,7 @@ class TestLongKernel(unittest.TestCase):
         expected = reference_long_rain(a, 1., lxm, lxp) \
                     - reference_long_rain(b, 1., lxm, lxp)
         expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=0)
+        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_integral_rain_type_1(self):
@@ -703,7 +686,7 @@ class TestLongKernel(unittest.TestCase):
         lxp = -2.
         expected = -reference_long_rain(b, a, lxm, lxp)
         expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=1)
+        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_integral_rain_type_2(self):
@@ -714,7 +697,7 @@ class TestLongKernel(unittest.TestCase):
         lxp = -1.
         expected = reference_long_rain(a, b, lxm, lxp)
         expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=2)
+        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_integral_rain_type_3(self):
@@ -726,19 +709,8 @@ class TestLongKernel(unittest.TestCase):
         expected = reference_long_rain(1., b, lxm, lxp) \
                     - reference_long_rain(1., a, lxm, lxp)
         expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=3)
+        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=15)
-
-    def test_kernel_integral_asserts_valid_btype(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        with self.assertRaises(ValueError):
-            kernel.kernel_integral((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(ValueError):
-            kernel.kernel_integral((lxm, lxp), (a, b), btype=4)
 
     def test_kernel_integral_cloud(self):
         kernel = LongKernel(self.constants)
@@ -746,8 +718,8 @@ class TestLongKernel(unittest.TestCase):
         b = 0.
         lxm = -1.
         lxp = 0.
-        expected = kernel._integral_cloud((lxm, lxp), (a, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=0)
+        expected = kernel._integral_cloud((lxm, lxp), (a, b), btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_cloud_btype_3(self):
@@ -756,8 +728,8 @@ class TestLongKernel(unittest.TestCase):
         b = add_logs(0., -1.)
         lxm = -1.
         lxp = 0.
-        expected = kernel._integral_cloud((lxm, lxp), (a, b), btype=3)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=3)
+        expected = kernel._integral_cloud((lxm, lxp), (a, b), btype=BOVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_rain(self):
@@ -766,24 +738,24 @@ class TestLongKernel(unittest.TestCase):
         b = 0.
         lxm = 0.
         lxp = 1.
-        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=0)
+        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
         kernel = LongKernel(self.constants)
         a = 0.
         b = 1.
         lxm = -1.
         lxp = 0.
-        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=0)
+        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
         kernel = LongKernel(self.constants)
         a = 0.
         b = 1.
         lxm = 0.
         lxp = 1.
-        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=0)
+        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_lx_spans_rain_m(self):
@@ -793,10 +765,10 @@ class TestLongKernel(unittest.TestCase):
         lxm = -1.
         lxp = 1.
         expected = \
-            kernel._integral_cloud((lxm, kernel.log_rain_m), (a, b), btype=0)
+            kernel._integral_cloud((lxm, kernel.log_rain_m), (a, b), btype=CNST)
         expected += \
-            kernel._integral_rain((kernel.log_rain_m, lxp), (a, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=0)
+            kernel._integral_rain((kernel.log_rain_m, lxp), (a, b), btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_0(self):
@@ -806,10 +778,12 @@ class TestLongKernel(unittest.TestCase):
         lxm = -1.
         lxp = 0.
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m), btype=0)
+            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+                                   btype=CNST)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=0)
+            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+                                  btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_1_no_crossing(self):
@@ -819,10 +793,12 @@ class TestLongKernel(unittest.TestCase):
         lxm = -1.
         lxp = 0.
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m), btype=1)
+            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+                                   btype=LOVA)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b), btype=0)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=1)
+            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+                                  btype=CNST)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_1_crossing(self):
@@ -834,13 +810,13 @@ class TestLongKernel(unittest.TestCase):
         cross_x = sub_logs(a, kernel.log_rain_m)
         expected = \
             kernel._integral_cloud((cross_x, lxp), (a, kernel.log_rain_m),
-                                   btype=1)
+                                   btype=LOVA)
         expected += \
             kernel._integral_rain((cross_x, lxp), (kernel.log_rain_m, b),
-                                  btype=0)
+                                  btype=CNST)
         expected += \
-            kernel._integral_rain((lxm, cross_x), (a, b), btype=1)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=1)
+            kernel._integral_rain((lxm, cross_x), (a, b), btype=LOVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_2_no_crossing(self):
@@ -850,10 +826,12 @@ class TestLongKernel(unittest.TestCase):
         lxm = -1.5
         lxp = -0.5
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m), btype=0)
+            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+                                   btype=CNST)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b), btype=2)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=2)
+            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+                                  btype=UPVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_2_crossing(self):
@@ -865,13 +843,13 @@ class TestLongKernel(unittest.TestCase):
         cross_x = sub_logs(b, kernel.log_rain_m)
         expected = \
             kernel._integral_cloud((lxm, cross_x), (a, kernel.log_rain_m),
-                                   btype=0)
+                                   btype=CNST)
         expected += \
-            kernel._integral_cloud((cross_x, lxp), (a, b), btype=2)
+            kernel._integral_cloud((cross_x, lxp), (a, b), btype=UPVA)
         expected += \
             kernel._integral_rain((lxm, cross_x), (kernel.log_rain_m, b),
-                                  btype=2)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=2)
+                                  btype=UPVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_3_no_crossing(self):
@@ -881,10 +859,12 @@ class TestLongKernel(unittest.TestCase):
         lxm = -1.5
         lxp = -0.5
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m), btype=1)
+            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+                                   btype=LOVA)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b), btype=2)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=3)
+            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+                                  btype=UPVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_3_bot_crossing(self):
@@ -896,14 +876,14 @@ class TestLongKernel(unittest.TestCase):
         cross_x = sub_logs(a, kernel.log_rain_m)
         expected = \
             kernel._integral_cloud((cross_x, lxp),
-                                   (a, kernel.log_rain_m), btype=1)
+                                   (a, kernel.log_rain_m), btype=LOVA)
         expected += \
             kernel._integral_rain((cross_x, lxp),
-                                  (kernel.log_rain_m, b), btype=2)
+                                  (kernel.log_rain_m, b), btype=UPVA)
         expected += \
             kernel._integral_rain((lxm, cross_x),
-                                  (a, b), btype=3)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=3)
+                                  (a, b), btype=BOVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_3_top_crossing(self):
@@ -915,13 +895,13 @@ class TestLongKernel(unittest.TestCase):
         cross_x = sub_logs(b, kernel.log_rain_m)
         expected = \
             kernel._integral_cloud((lxm, cross_x),
-                                   (a, kernel.log_rain_m), btype=1)
+                                   (a, kernel.log_rain_m), btype=LOVA)
         expected += \
-            kernel._integral_cloud((cross_x, lxp), (a, b), btype=3)
+            kernel._integral_cloud((cross_x, lxp), (a, b), btype=BOVA)
         expected += \
             kernel._integral_rain((lxm, cross_x),
-                                  (kernel.log_rain_m, b), btype=2)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=3)
+                                  (kernel.log_rain_m, b), btype=UPVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_3_both_crossing(self):
@@ -934,16 +914,16 @@ class TestLongKernel(unittest.TestCase):
         x_high = sub_logs(b, kernel.log_rain_m)
         expected = \
             kernel._integral_cloud((x_low, x_high),
-                                   (a, kernel.log_rain_m), btype=1)
+                                   (a, kernel.log_rain_m), btype=LOVA)
         expected += \
-            kernel._integral_cloud((x_high, lxp), (a, b), btype=3)
+            kernel._integral_cloud((x_high, lxp), (a, b), btype=BOVA)
         expected += \
             kernel._integral_rain((x_low, x_high),
-                                  (kernel.log_rain_m, b), btype=2)
+                                  (kernel.log_rain_m, b), btype=UPVA)
         expected += \
             kernel._integral_rain((lxm, x_low),
-                                  (a, b), btype=3)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=3)
+                                  (a, b), btype=BOVA)
+        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_integrate_over_bins(self):
@@ -1002,17 +982,6 @@ class TestHallKernel(unittest.TestCase):
         self.assertAlmostEqual(actual / expected, 1.)
         self.assertEqual(actual, self.kernel.kernel_lx(lx2, lx1))
 
-    def test_kernel_integral_asserts_valid_btype(self):
-        kernel = self.kernel
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        with self.assertRaises(ValueError):
-            kernel.kernel_integral((lxm, lxp), (a, b), btype=-1)
-        with self.assertRaises(ValueError):
-            kernel.kernel_integral((lxm, lxp), (a, b), btype=4)
-
     def test_kernel_integral(self):
         a = -1.
         afun = lambda lx: sub_logs(a, lx)
@@ -1021,19 +990,19 @@ class TestHallKernel(unittest.TestCase):
         lxm = -2.5
         lxp = -2.
         f = lambda ly, lx: np.exp(lx) * self.kernel.kernel_lx(lx, ly)
-        btype = 0
+        btype = CNST
         actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
         expected, _ = dblquad(f, lxm, lxp, a, b)
         self.assertAlmostEqual(actual / expected, 1.)
-        btype = 1
+        btype = LOVA
         actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
         expected, _ = dblquad(f, lxm, lxp, afun, b)
         self.assertAlmostEqual(actual / expected, 1.)
-        btype = 2
+        btype = UPVA
         actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
         expected, _ = dblquad(f, lxm, lxp, a, bfun)
         self.assertAlmostEqual(actual / expected, 1.)
-        btype = 3
+        btype = BOVA
         actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
         expected, _ = dblquad(f, lxm, lxp, afun, bfun)
         self.assertAlmostEqual(actual / expected, 1.)
@@ -1041,5 +1010,5 @@ class TestHallKernel(unittest.TestCase):
     def test_kernel_integral_skips_close_x_bounds(self):
         lx1 = -3.
         lx2 = lx1 + 1.e-14
-        actual = self.kernel.kernel_integral((lx1, lx2), (-1., 0.), btype=0)
+        actual = self.kernel.kernel_integral((lx1, lx2), (-1., 0.), btype=CNST)
         self.assertEqual(actual, 0.)
