@@ -207,8 +207,6 @@ class Kernel:
         If a particular bound is an l_y value according to the btype, then the
         corresponding y_bound_p entry is returned for that bound. If the bound
         is an l_z value, the corresponding l_y min or max is returned.
-
-        This function also checks that btype is a valid value (0 to 3).
         """
         if btype.lower_varies():
             min_ly = sub_logs(y_bound_p[0], lx_bound[1])
