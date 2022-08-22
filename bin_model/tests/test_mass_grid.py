@@ -29,10 +29,10 @@ class TestMassGrid(unittest.TestCase):
                                         std_diameter=1.e-4,
                                         rain_d=1.e-4)
         # This will put lx bin boundaries at 10^-6, 10^-5, ..., 10^3.
-        self.grid = GeometricMassGrid(self.constants,
-                                      d_min=1.e-6,
-                                      d_max=1.e-3,
-                                      num_bins=9)
+        self.geo_grid = GeometricMassGrid(self.constants,
+                                          d_min=1.e-6,
+                                          d_max=1.e-3,
+                                          num_bins=9)
         # Mass-doubling grid.
         self.md_grid = GeometricMassGrid(self.constants,
                                          d_min=1.e-6,
@@ -47,25 +47,22 @@ class TestMassGrid(unittest.TestCase):
     def test_find_bin(self):
         for i in range(9):
             lx = np.log(10.**(-5.5+i))
-            self.assertEqual(self.grid.find_bin(lx), i)
+            self.assertEqual(self.geo_grid.find_bin(lx), i)
 
     def test_find_bin_lower_edge(self):
         lx = np.log(10.**-6.5)
-        self.assertEqual(self.grid.find_bin(lx), -1)
+        self.assertEqual(self.geo_grid.find_bin(lx), -1)
         lx = np.log(10.**-10)
-        self.assertEqual(self.grid.find_bin(lx), -1)
+        self.assertEqual(self.geo_grid.find_bin(lx), -1)
 
     def test_find_bin_upper_edge(self):
         lx = np.log(10.**3.5)
-        self.assertEqual(self.grid.find_bin(lx), 9)
+        self.assertEqual(self.geo_grid.find_bin(lx), 9)
         lx = np.log(10.**10)
-        self.assertEqual(self.grid.find_bin(lx), 9)
+        self.assertEqual(self.geo_grid.find_bin(lx), 9)
 
-    def test_find_sum_bins(self):
-        # Note that this may not be sufficient to capture non-geometric cases,
-        # since geometrically-spaced grids should always have num_sum_bins
-        # equal to 2 (or maybe 1).
-        grid = self.grid
+    def test_find_sum_bins_geo(self):
+        grid = self.geo_grid
         lx1 = grid.bin_bounds[0]
         lx2 = grid.bin_bounds[1]
         ly1 = grid.bin_bounds[0]
@@ -78,6 +75,8 @@ class TestMassGrid(unittest.TestCase):
         idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
         self.assertEqual(idx, 1)
         self.assertEqual(num, 2)
+
+    def test_find_sum_bins_mass_doubling(self):
         # Different results for grid with spacing dividing log(2) evenly.
         grid = self.md_grid
         lx1 = grid.bin_bounds[0]
@@ -92,6 +91,19 @@ class TestMassGrid(unittest.TestCase):
         idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
         self.assertEqual(idx, 1)
         self.assertEqual(num, 2)
+
+    def test_find_sum_bins_irregular(self):
+        # Irregular grid for which MassGrid can span many boundaries.
+        irreg_bounds = [np.log(0.5)] \
+            + [np.log(1. + (0.1 * i)) for i in range(12)]
+        grid = MassGrid(self.constants, bin_bounds=np.array(irreg_bounds))
+        lx1 = grid.bin_bounds[0]
+        lx2 = grid.bin_bounds[1]
+        ly1 = grid.bin_bounds[0]
+        ly2 = grid.bin_bounds[1]
+        idx, num = grid.find_sum_bins(lx1, lx2, ly1, ly2)
+        self.assertEqual(idx, 1)
+        self.assertEqual(num, 10)
 
     def test_find_sum_bins_upper_range(self):
         grid = self.md_grid
@@ -167,7 +179,7 @@ class TestMassGrid(unittest.TestCase):
 
     def test_construct_sparsity_pattern_invalid_boundary_raises(self):
         with self.assertRaises(AssertionError):
-            self.grid.construct_sparsity_structure(boundary='nonsense')
+            self.geo_grid.construct_sparsity_structure(boundary='nonsense')
 
 
 class TestGeometricMassGrid(unittest.TestCase):

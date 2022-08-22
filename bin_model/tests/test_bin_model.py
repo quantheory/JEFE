@@ -3187,7 +3187,7 @@ class TestNetcdfFile(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.NetcdfFile.read_kernel(self.constants)
 
-    def test_mass_grid_io(self):
+    def test_geometric_mass_grid_io(self):
         grid = self.grid
         self.NetcdfFile.write_mass_grid(grid)
         grid2 = self.NetcdfFile.read_mass_grid(self.constants)
@@ -3195,10 +3195,15 @@ class TestNetcdfFile(unittest.TestCase):
         self.assertEqual(grid.d_max, grid2.d_max)
         self.assertEqual(grid.num_bins, grid2.num_bins)
 
-    def test_grid_to_netcdf_not_implemented(self):
-        grid = MassGrid()
-        with self.assertRaises(NotImplementedError):
-            self.NetcdfFile.write_mass_grid(grid)
+    def test_mass_grid_io(self):
+        num_bins = 2
+        bin_bounds = np.linspace(0., num_bins, num_bins+1)
+        grid = MassGrid(self.constants, bin_bounds)
+        self.NetcdfFile.write_mass_grid(grid)
+        grid2 = self.NetcdfFile.read_mass_grid(self.constants)
+        self.assertEqual(grid2.num_bins, grid.num_bins)
+        for i in range(num_bins+1):
+            self.assertEqual(grid2.bin_bounds[i], grid.bin_bounds[i])
 
     def test_bad_grid_type_raises(self):
         self.NetcdfFile.write_dimension('mass_grid_type_str_len',

@@ -35,18 +35,18 @@ class MassGrid:
                    bin edges (m).
     bin_widths - Array of size num_bins containing widths of each bin
                  in log-units, i.e. `sum(bin_widths) == lx_max-lx_min`.
-
-    Methods:
-    find_bin
-    get_sum_bins
-    to_netcdf
-
-    Class methods:
-    from_netcdf
     """
 
     mass_grid_type_str_len = 32
     """Length of mass_grid_type string on file."""
+
+    def __init__(self, constants, bin_bounds):
+        self.constants = constants
+        self.num_bins = len(bin_bounds)-1
+        self.bin_bounds = bin_bounds
+        bin_bounds_m = np.exp(self.bin_bounds)
+        self.bin_bounds_d = constants.scaled_mass_to_diameter(bin_bounds_m)
+        self.bin_widths = self.bin_bounds[1:] - self.bin_bounds[:-1]
 
     def find_bin(self, lx):
         """Find the index of the bin containing the given mass value.
@@ -211,19 +211,33 @@ class MassGrid:
         return weight_vector
 
     def to_netcdf(self, netcdf_file):
-        raise NotImplementedError
+        """Write internal state to netCDF file."""
+        netcdf_file.write_dimension('mass_grid_type_str_len',
+                                    self.mass_grid_type_str_len)
+        netcdf_file.write_characters('mass_grid_type',
+                                     'Irregular',
+                                     'mass_grid_type_str_len',
+                                     'Type of mass grid')
+        netcdf_file.write_dimension('num_bins', self.num_bins)
+        netcdf_file.write_dimension('num_bin_boundaries', self.num_bins+1)
+        netcdf_file.write_array('bin_bounds', self.bin_bounds,
+            'f8', ('num_bin_boundaries',), '1',
+            'Logarithms of nondimensionalized boundaries between'
+            ' mass grid bins')
 
     @classmethod
-    def from_netcdf(self, netcdf_file, constants):
+    def from_netcdf(cls, netcdf_file, constants):
         """Retrieve a MassGrid object from a NetcdfFile."""
         mass_grid_type = netcdf_file.read_characters('mass_grid_type')
+        if mass_grid_type == 'Irregular':
+            bin_bounds = netcdf_file.read_array('bin_bounds')
+            return MassGrid(constants, bin_bounds)
         if mass_grid_type == 'Geometric':
             d_min = netcdf_file.read_scalar('d_min')
             d_max = netcdf_file.read_scalar('d_max')
             num_bins = netcdf_file.read_dimension('num_bins')
             return GeometricMassGrid(constants, d_min, d_max, num_bins)
-        else:
-            assert False, "unrecognized mass_grid_type in file"
+        assert False, "unrecognized mass_grid_type in file"
 
 
 class GeometricMassGrid(MassGrid):
@@ -240,19 +254,15 @@ class GeometricMassGrid(MassGrid):
     """
 
     def __init__(self, constants, d_min, d_max, num_bins):
-        self.constants = constants
         self.d_min = d_min
         self.d_max = d_max
-        self.num_bins = num_bins
         self.x_min = constants.diameter_to_scaled_mass(d_min)
         self.x_max = constants.diameter_to_scaled_mass(d_max)
         self.lx_min = np.log(self.x_min)
         self.lx_max = np.log(self.x_max)
-        self.dlx = (self.lx_max - self.lx_min) / self.num_bins
-        self.bin_bounds = np.linspace(self.lx_min, self.lx_max, num_bins+1)
-        bin_bounds_m = np.exp(self.bin_bounds)
-        self.bin_bounds_d = constants.scaled_mass_to_diameter(bin_bounds_m)
-        self.bin_widths = self.bin_bounds[1:] - self.bin_bounds[:-1]
+        self.dlx = (self.lx_max - self.lx_min) / num_bins
+        bin_bounds = np.linspace(self.lx_min, self.lx_max, num_bins+1)
+        super().__init__(constants, bin_bounds)
 
     def to_netcdf(self, netcdf_file):
         """Write internal state to netCDF file."""
