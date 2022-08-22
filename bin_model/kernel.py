@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-"""Code for construction of kernels for use in JEFE's bin model."""
+"""Classes for construction of kernels for use in JEFE's bin model."""
 
 import enum
 
