@@ -22,7 +22,7 @@ from scipy.integrate import dblquad
 
 from bin_model.math_utils import add_logs, sub_logs, dilogarithm
 from bin_model.constants import ModelConstants
-# pylint: disable-next=wildcard-import
+# pylint: disable-next=wildcard-import,unused-wildcard-import
 from bin_model.kernel import *
 
 # Because this module requires specifying a large number of BoundType enums,
@@ -86,7 +86,7 @@ class TestSCEfficiency(unittest.TestCase):
         self.assertAlmostEqual(sc_efficiency(d1, d2),
                                (0.8 / (1. + x))**2,
                                places=2)
-        # pylint: disable=arguments-out-of-order
+        # pylint: disable-next=arguments-out-of-order
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
     def test_sc_efficiency_low_diameter(self):
@@ -96,7 +96,7 @@ class TestSCEfficiency(unittest.TestCase):
         d2 = x * d1
         self.assertAlmostEqual(sc_efficiency(d1, d2),
                                sc_efficiency(20.e-6, x * 20.e-6))
-        # pylint: disable=arguments-out-of-order
+        # pylint: disable-next=arguments-out-of-order
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
 
@@ -112,6 +112,7 @@ class TestKernel(unittest.TestCase):
     def setUp(self):
         self.kernel = Kernel()
 
+    # pylint: disable-next=too-many-arguments
     def lxs_btypes_assert(self, lx_bound, ly_bound, lz_bound, expected_lxs,
                           expected_btypes):
         """Check lxs and btypes for given bounds.
@@ -337,6 +338,7 @@ class TestKernel(unittest.TestCase):
                                [CNST])
 
     def test_get_y_bound_p(self):
+        """Check get_y_bound_p for all BoundType values."""
         kernel = self.kernel
         btypes = [CNST, LOVA, UPVA, BOVA]
         ly_bound = (0., 1.)
@@ -346,34 +348,40 @@ class TestKernel(unittest.TestCase):
         self.assertListEqual(list(y_bound_p[:,1]), [1., 1., 3., 3.])
 
     def test_integrate_over_bins_raises(self):
+        """Check that the base class integrate_over_bins raises an error."""
         kernel = self.kernel
         bound = (0., 1.)
         with self.assertRaises(NotImplementedError):
             kernel.integrate_over_bins(bound, bound, bound)
 
 
-def reference_long_cloud(a, b, lxm, lxp):
+def reference_long_cloud(kc, lx_bound, y_bound_p):
     r"""Reference implementation of double integral used for Long's kernel.
 
     The definite integral being computed is:
 
     \int_{lxm}^{lxp} \int_{a}^{log(e^b-e^x)} (e^{2x - y} + e^{y}) dy dx
     """
-    return np.exp(b) * np.log((np.exp(b)-np.exp(lxp))/(np.exp(b)-np.exp(lxm)))\
-        + np.exp(-a) / 2. * (np.exp(2.*lxp)-np.exp(2.*lxm))\
-        + (np.exp(b)-np.exp(a))*(lxp-lxm)
+    lxm, lxp = lx_bound
+    a, b = y_bound_p
+    return kc * (np.exp(b) * np.log((np.exp(b)-np.exp(lxp))
+                                    / (np.exp(b)-np.exp(lxm)))
+                 + np.exp(-a) / 2. * (np.exp(2.*lxp)-np.exp(2.*lxm))
+                 + (np.exp(b)-np.exp(a))*(lxp-lxm))
 
-def reference_long_rain(a, b, lxm, lxp):
+def reference_long_rain(kr, lx_bound, y_bound_p):
     r"""Reference implementation of double integral used for Long's kernel.
 
     The definite integral being computed is:
 
     \int_{lxm}^{lxp} \int_{a}^{log(e^b-e^x)} (e^{x - y} + 1) dy dx
     """
-    return np.log((np.exp(b)-np.exp(lxp))/(np.exp(b)-np.exp(lxm)))\
-        + np.exp(-a) * (np.exp(lxp)-np.exp(lxm))\
-        - dilogarithm(np.exp(lxp-b)) + dilogarithm(np.exp(lxm-b))\
-        + (b-a)*(lxp-lxm)
+    lxm, lxp = lx_bound
+    a, b = y_bound_p
+    return kr * (np.log((np.exp(b)-np.exp(lxp))/(np.exp(b)-np.exp(lxm)))
+                 + np.exp(-a) * (np.exp(lxp)-np.exp(lxm))
+                 - dilogarithm(np.exp(lxp-b)) + dilogarithm(np.exp(lxm-b))
+                 + (b-a)*(lxp-lxm))
 
 class TestReferenceLong(unittest.TestCase):
     """
@@ -381,40 +389,48 @@ class TestReferenceLong(unittest.TestCase):
     """
 
     def test_reference_long_cloud(self):
-        integrand = lambda y, x: np.exp(2.*x - y) + np.exp(y)
-        a = 0.
-        b = 1.
-        lxm = -1.
-        lxp = 0.
-        hfun = lambda x: np.log(np.exp(b)-np.exp(x))
-        expected, err = dblquad(integrand, lxm, lxp, a, hfun, epsabs=1.e-13)
-        actual = reference_long_cloud(a, b, lxm, lxp)
+        """Check reference_long_cloud against numerical integration."""
+        kc = 2.
+        def integrand(y, x):
+            return kc * (np.exp(2.*x - y) + np.exp(y))
+        lx_bound = (-1., 0.)
+        y_bound_p = (0., 1.)
+        def hfun(x):
+            return np.log(np.exp(y_bound_p[1])-np.exp(x))
+        expected, _ = dblquad(integrand, lx_bound[0], lx_bound[1],
+                              y_bound_p[0], hfun, epsabs=1.e-13)
+        actual = reference_long_cloud(kc, lx_bound, y_bound_p)
         self.assertAlmostEqual(actual, expected, places=12)
 
     def test_reference_long_rain(self):
-        integrand = lambda y, x: np.exp(x - y) + 1.
-        a = 0.
-        b = 1.
-        lxm = -1.
-        lxp = 0.
-        hfun = lambda x: np.log(np.exp(b)-np.exp(x))
-        expected, err = dblquad(integrand, lxm, lxp, a, hfun, epsabs=1.e-13)
-        actual = reference_long_rain(a, b, lxm, lxp)
+        """Check reference_long_rain against numerical integration."""
+        kr = 2.
+        def integrand(y, x):
+            return kr * (np.exp(x - y) + 1.)
+        lx_bound = (-1., 0.)
+        y_bound_p = (0., 1.)
+        def hfun(x):
+            return np.log(np.exp(y_bound_p[1])-np.exp(x))
+        expected, _ = dblquad(integrand, lx_bound[0], lx_bound[1],
+                              y_bound_p[0], hfun, epsabs=1.e-13)
+        actual = reference_long_rain(kr, lx_bound, y_bound_p)
         self.assertAlmostEqual(actual, expected, places=12)
 
 
-class TestLongKernel(unittest.TestCase):
+class TestLongKernelInit(unittest.TestCase):
     """
-    Tests of all LongKernel methods.
+    Tests of LongKernel constructor.
     """
 
     def setUp(self):
+        """Create a ModelConstants for testing LongKernel."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
                                         std_diameter=1.e-4,
                                         rain_d=1.e-4)
 
     def test_fail_if_two_kcs(self):
+        """Check that LongKernel.__init__ can only accept one kc setting."""
         with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kc_cgs=1., kc_si=1.)
         with self.assertRaises(RuntimeError):
@@ -423,6 +439,7 @@ class TestLongKernel(unittest.TestCase):
             LongKernel(self.constants, kc=1., kc_si=1.)
 
     def test_fail_if_two_krs(self):
+        """Check that LongKernel.__init__ can only accept one kr setting."""
         with self.assertRaises(RuntimeError):
             LongKernel(self.constants, kr_cgs=1., kr_si=1.)
         with self.assertRaises(RuntimeError):
@@ -431,48 +448,60 @@ class TestLongKernel(unittest.TestCase):
             LongKernel(self.constants, kr=1., kr_si=1.)
 
     def test_kc(self):
+        """Check setting kc directly."""
         kernel = LongKernel(self.constants, kc=3.)
         self.assertEqual(kernel.kc, 3.)
 
-    def test_kr(self):
-        kernel = LongKernel(self.constants, kr=3.)
-        self.assertEqual(kernel.kr, 3.)
-
     def test_kc_cgs(self):
+        """Check setting kc using cgs units."""
         kernel = LongKernel(self.constants, kc_cgs=3.)
         expected = 3. * self.constants.std_mass**2
         self.assertAlmostEqual(kernel.kc, expected, places=25)
 
     def test_kc_si(self):
+        """Check setting kc using SI units."""
         kernel1 = LongKernel(self.constants, kc_cgs=3.)
         kernel2 = LongKernel(self.constants, kc_si=3.)
         self.assertEqual(kernel1.kc, kernel2.kc)
 
     def test_kc_default(self):
+        """Check default value of kc."""
         kernel1 = LongKernel(self.constants)
         kernel2 = LongKernel(self.constants, kc_cgs=9.44e9)
         self.assertAlmostEqual(kernel1.kc, kernel2.kc, places=15)
 
-    def test_kr_si(self):
-        kernel = LongKernel(self.constants, kr_si=3.)
-        expected = 3. * self.constants.std_mass
-        self.assertAlmostEqual(kernel.kr, expected, places=15)
+    def test_kr(self):
+        """Check setting kr directly."""
+        kernel = LongKernel(self.constants, kr=3.)
+        self.assertEqual(kernel.kr, 3.)
 
     def test_kr_cgs(self):
+        """Check setting kr using cgs units."""
         kernel1 = LongKernel(self.constants, kr_cgs=3.)
         kernel2 = LongKernel(self.constants, kr_si=3.e-3)
         self.assertAlmostEqual(kernel1.kr, kernel2.kr, places=15)
 
+    def test_kr_si(self):
+        """Check setting kc using SI units."""
+        kernel = LongKernel(self.constants, kr_si=3.)
+        expected = 3. * self.constants.std_mass
+        self.assertAlmostEqual(kernel.kr, expected, places=15)
+
     def test_kr_default(self):
+        """Check default value of kr."""
         kernel1 = LongKernel(self.constants)
         kernel2 = LongKernel(self.constants, kr_cgs=5.78e3)
         self.assertAlmostEqual(kernel1.kr, kernel2.kr, places=15)
 
     def test_log_rain_m(self):
+        """Check setting cloud-rain threshold mass directly."""
         kernel = LongKernel(self.constants, rain_m=0.8)
         self.assertAlmostEqual(kernel.log_rain_m, np.log(0.8))
 
     def test_log_rain_m_default(self):
+        """Check default value of cloud-rain threshold mass."""
+        # Set this constants object to make sure LongKernel is not just copying
+        # rain_m from ModelConstants (which was the original behavior).
         constants = ModelConstants(rho_water=1000.,
                                    rho_air=1.2,
                                    std_diameter=1.e-4,
@@ -481,323 +510,335 @@ class TestLongKernel(unittest.TestCase):
         # Original Long kernel value.
         self.assertAlmostEqual(kernel.log_rain_m, 0.)
 
-    def test_integral_cloud_type_0(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        expected = reference_long_cloud(a, 1., lxm, lxp) \
-                    - reference_long_cloud(b, 1., lxm, lxp)
-        expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=CNST)
+
+
+class TestLongKernel(unittest.TestCase):
+    """
+    Tests of LongKernel methods.
+    """
+
+    def setUp(self):
+        """Create a LongKernel for testing purposes."""
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+        self.kernel = LongKernel(self.constants)
+
+    def test_integral_cloud_constant(self):
+        """Check _integral_cloud for the CONSTANT BoundType."""
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (-1., 0.)
+        expected = reference_long_cloud(kernel.kc, lx_bound,
+                                        (y_bound_p[0], 1.)) \
+                    - reference_long_cloud(kernel.kc, lx_bound,
+                                        (y_bound_p[1], 1.))
+        actual = kernel._integral_cloud(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_cloud_type_1(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -3.
-        lxp = -2.
-        expected = -reference_long_cloud(b, a, lxm, lxp)
-        expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=LOVA)
+    def test_integral_cloud_lower_varies(self):
+        """Check _integral_cloud for the LOWER_VARIES BoundType."""
+        kernel = self.kernel
+        lx_bound = (-3., -2.)
+        y_bound_p = (-1., 0.)
+        expected = -reference_long_cloud(kernel.kc, lx_bound,
+                                         (y_bound_p[1], y_bound_p[0]))
+        actual = kernel._integral_cloud(lx_bound, y_bound_p, btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_cloud_type_2(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -2.
-        lxp = -1.
-        expected = reference_long_cloud(a, b, lxm, lxp)
-        expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=UPVA)
+    def test_integral_cloud_upper_varies(self):
+        """Check _integral_cloud for the UPPER_VARIES BoundType."""
+        kernel = self.kernel
+        lx_bound = (-2., -1.)
+        y_bound_p = (-1., 0.)
+        expected = reference_long_cloud(kernel.kc, lx_bound, y_bound_p)
+        actual = kernel._integral_cloud(lx_bound, y_bound_p, btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_cloud_type_3(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -3.
-        lxp = -2.
-        expected = reference_long_cloud(1., b, lxm, lxp) \
-                    - reference_long_cloud(1., a, lxm, lxp)
-        expected *= kernel.kc
-        actual = kernel._integral_cloud((lxm, lxp), (a, b), btype=BOVA)
+    def test_integral_cloud_both_vary(self):
+        """Check _integral_cloud for the BOTH_VARY BoundType."""
+        kernel = self.kernel
+        lx_bound = (-2., -1.)
+        y_bound_p = (-1., 0.)
+        expected = reference_long_cloud(kernel.kc, lx_bound,
+                                        (1., y_bound_p[1])) \
+                    - reference_long_cloud(kernel.kc, lx_bound,
+                                           (1., y_bound_p[0]))
+        actual = kernel._integral_cloud(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_rain_type_0(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        expected = reference_long_rain(a, 1., lxm, lxp) \
-                    - reference_long_rain(b, 1., lxm, lxp)
-        expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
+    def test_integral_rain_constant(self):
+        """Check _integral_rain for the CONSTANT BoundType."""
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (-1., 0.)
+        expected = reference_long_rain(kernel.kr, lx_bound,
+                                       (y_bound_p[0], 1.)) \
+                    - reference_long_rain(kernel.kr, lx_bound,
+                                       (y_bound_p[1], 1.))
+        actual = kernel._integral_rain(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_rain_type_1(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -3.
-        lxp = -2.
-        expected = -reference_long_rain(b, a, lxm, lxp)
-        expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=LOVA)
+    def test_integral_rain_lower_varies(self):
+        """Check _integral_rain for the LOWER_VARIES BoundType."""
+        kernel = self.kernel
+        lx_bound = (-3., -2.)
+        y_bound_p = (-1., 0.)
+        expected = -reference_long_rain(kernel.kr, lx_bound,
+                                        (y_bound_p[1], y_bound_p[0]))
+        actual = kernel._integral_rain(lx_bound, y_bound_p, btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_rain_type_2(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -2.
-        lxp = -1.
-        expected = reference_long_rain(a, b, lxm, lxp)
-        expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=UPVA)
+    def test_integral_rain_upper_varies(self):
+        """Check _integral_rain for the UPPER_VARIES BoundType."""
+        kernel = self.kernel
+        lx_bound = (-2., -1.)
+        y_bound_p = (-1., 0.)
+        expected = reference_long_rain(kernel.kr, lx_bound, y_bound_p)
+        actual = kernel._integral_rain(lx_bound, y_bound_p, btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
-    def test_integral_rain_type_3(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -3.
-        lxp = -2.
-        expected = reference_long_rain(1., b, lxm, lxp) \
-                    - reference_long_rain(1., a, lxm, lxp)
-        expected *= kernel.kr
-        actual = kernel._integral_rain((lxm, lxp), (a, b), btype=BOVA)
+    def test_integral_rain_both_vary(self):
+        """Check _integral_rain for the BOTH_VARY BoundType."""
+        kernel = self.kernel
+        lx_bound = (-3., -2.)
+        y_bound_p = (-1., 0.)
+        expected = reference_long_rain(kernel.kr, lx_bound,
+                                        (1., y_bound_p[1])) \
+                    - reference_long_rain(kernel.kr, lx_bound,
+                                           (1., y_bound_p[0]))
+        actual = kernel._integral_rain(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=15)
 
     def test_kernel_integral_cloud(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 0.
-        expected = kernel._integral_cloud((lxm, lxp), (a, b), btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
+        """Check kernel_integral for two cloud bins."""
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (-1., 0.)
+        expected = kernel._integral_cloud(lx_bound, y_bound_p, btype=CNST)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_cloud_btype_3(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(0., -2.)
-        b = add_logs(0., -1.)
-        lxm = -1.
-        lxp = 0.
-        expected = kernel._integral_cloud((lxm, lxp), (a, b), btype=BOVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
+    def test_kernel_integral_cloud_varying_btype(self):
+        """Check kernel_integral using cloud formula with BoundType = BOTH_VARY.
+
+        Specifically, this covers the case where the y_bound_p values are in the
+        rain-sized range, but the relevant portions of the x and y bins are both
+        pure cloud.
+        """
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (add_logs(0., -2.), add_logs(0., -1.))
+        expected = kernel._integral_cloud(lx_bound, y_bound_p, btype=BOVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_rain(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = 0.
-        lxp = 1.
-        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
-        self.assertAlmostEqual(actual, expected, places=20)
-        kernel = LongKernel(self.constants)
-        a = 0.
-        b = 1.
-        lxm = -1.
-        lxp = 0.
-        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
-        self.assertAlmostEqual(actual, expected, places=20)
-        kernel = LongKernel(self.constants)
-        a = 0.
-        b = 1.
-        lxm = 0.
-        lxp = 1.
-        expected = kernel._integral_rain((lxm, lxp), (a, b), btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
-        self.assertAlmostEqual(actual, expected, places=20)
+        """Check kernel_integral when at least one bin is purely rain-sized."""
+        kernel = self.kernel
+        # Cases where x bin is rain and y bin is cloud, x is cloud and y is
+        # rain, and both bins are rain.
+        lx_bounds = [(0., 1.), (-1., 0.), (0., 1.)]
+        y_bound_ps = [(-1., 0.), (0., 1.), (0., 1.)]
+        for lx_bound, y_bound_p in zip(lx_bounds, y_bound_ps):
+            expected = kernel._integral_rain(lx_bound, y_bound_p, btype=CNST)
+            actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=CNST)
+            self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_lx_spans_rain_m(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 0.
-        lxm = -1.
-        lxp = 1.
+        """Check kernel_integral, CONSTANT btype, x bin is part rain."""
+        kernel = self.kernel
+        lx_bound = (-1., 1.)
+        y_bound_p = (-1., 0.)
         expected = \
-            kernel._integral_cloud((lxm, kernel.log_rain_m), (a, b), btype=CNST)
+            kernel._integral_cloud((lx_bound[0], kernel.log_rain_m),
+                                   y_bound_p, btype=CNST)
         expected += \
-            kernel._integral_rain((kernel.log_rain_m, lxp), (a, b), btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
+            kernel._integral_rain((kernel.log_rain_m, lx_bound[1]),
+                                  y_bound_p, btype=CNST)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_0(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = 1.
-        lxm = -1.
-        lxp = 0.
+    def test_kernel_integral_ly_spans_rain_m_btype_constant(self):
+        """Check kernel_integral, CONSTANT btype, y bin is part rain."""
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (-1., 1.)
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+            kernel._integral_cloud(lx_bound, (y_bound_p[0], kernel.log_rain_m),
                                    btype=CNST)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+            kernel._integral_rain(lx_bound, (kernel.log_rain_m, y_bound_p[1]),
                                   btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=CNST)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_1_no_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(-1., 0.)
-        b = 1.
-        lxm = -1.
-        lxp = 0.
+    def test_kernel_integral_ly_spans_rain_m_btype_lower_varies(self):
+        """Check kernel_integral, LOWER_VARIES btype, y bin is part rain.
+
+        This is the case where the y bounds do not cross the cloud-rain
+        threshold mass.
+        """
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (add_logs(-1., 0.), 1.)
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+            kernel._integral_cloud(lx_bound, (y_bound_p[0], kernel.log_rain_m),
                                    btype=LOVA)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+            kernel._integral_rain(lx_bound, (kernel.log_rain_m, y_bound_p[1]),
                                   btype=CNST)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=LOVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_1_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(-1., 0.1)
-        b = 1.
-        lxm = -1.
-        lxp = 0.
-        cross_x = sub_logs(a, kernel.log_rain_m)
+    def test_kernel_integral_ly_spans_rain_m_lower_crossing(self):
+        """Check kernel_integral, region lower boundary crosses y=rain_m."""
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        y_bound_p = (add_logs(-1., 0.1), 1.)
+        cross_x = sub_logs(y_bound_p[0], kernel.log_rain_m)
         expected = \
-            kernel._integral_cloud((cross_x, lxp), (a, kernel.log_rain_m),
+            kernel._integral_cloud((cross_x, lx_bound[1]),
+                                   (y_bound_p[0], kernel.log_rain_m),
                                    btype=LOVA)
         expected += \
-            kernel._integral_rain((cross_x, lxp), (kernel.log_rain_m, b),
+            kernel._integral_rain((cross_x, lx_bound[1]),
+                                  (kernel.log_rain_m, y_bound_p[1]),
                                   btype=CNST)
         expected += \
-            kernel._integral_rain((lxm, cross_x), (a, b), btype=LOVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=LOVA)
+            kernel._integral_rain((lx_bound[0], cross_x), y_bound_p, btype=LOVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_2_no_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = add_logs(-0.5, 0.)
-        lxm = -1.5
-        lxp = -0.5
+    def test_kernel_integral_ly_spans_rain_m_btype_upper_varies(self):
+        """Check kernel_integral, UPPER_VARIES btype, y bin is part rain.
+
+        This is the case where the y bounds do not cross the cloud-rain
+        threshold mass.
+        """
+        kernel = self.kernel
+        lx_bound = (-1.5, -0.5)
+        y_bound_p = (-1., add_logs(-0.5, 0.))
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+            kernel._integral_cloud(lx_bound, (y_bound_p[0], kernel.log_rain_m),
                                    btype=CNST)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+            kernel._integral_rain(lx_bound, (kernel.log_rain_m, y_bound_p[1]),
                                   btype=UPVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=UPVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_2_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = -1.
-        b = add_logs(-0.5, -0.1)
-        lxm = -1.5
-        lxp = -0.5
-        cross_x = sub_logs(b, kernel.log_rain_m)
+    def test_kernel_integral_ly_spans_rain_m_upper_crossing(self):
+        """Check kernel_integral, region upper boundary crosses y=rain_m."""
+        kernel = self.kernel
+        lx_bound = (-1.5, -0.5)
+        y_bound_p = (-1., add_logs(-0.5, -0.1))
+        cross_x = sub_logs(y_bound_p[1], kernel.log_rain_m)
         expected = \
-            kernel._integral_cloud((lxm, cross_x), (a, kernel.log_rain_m),
+            kernel._integral_cloud((lx_bound[0], cross_x),
+                                   (y_bound_p[0], kernel.log_rain_m),
                                    btype=CNST)
         expected += \
-            kernel._integral_cloud((cross_x, lxp), (a, b), btype=UPVA)
+            kernel._integral_cloud((cross_x, lx_bound[1]),
+                                   y_bound_p, btype=UPVA)
         expected += \
-            kernel._integral_rain((lxm, cross_x), (kernel.log_rain_m, b),
+            kernel._integral_rain((lx_bound[0], cross_x),
+                                  (kernel.log_rain_m, y_bound_p[1]),
                                   btype=UPVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=UPVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_3_no_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(-1.5, 0.)
-        b = add_logs(-0.5, 0.)
-        lxm = -1.5
-        lxp = -0.5
+    def test_kernel_integral_ly_spans_rain_m_btype_both_vary(self):
+        """Check kernel_integral, BOTH_VARY btype, y bin is part rain.
+
+        This is the case where the y bounds do not cross the cloud-rain
+        threshold mass.
+        """
+        kernel = self.kernel
+        lx_bound = (-1.5, -0.5)
+        y_bound_p = (add_logs(-1.5, 0.), add_logs(-0.5, 0.))
         expected = \
-            kernel._integral_cloud((lxm, lxp), (a, kernel.log_rain_m),
+            kernel._integral_cloud(lx_bound, (y_bound_p[0], kernel.log_rain_m),
                                    btype=LOVA)
         expected += \
-            kernel._integral_rain((lxm, lxp), (kernel.log_rain_m, b),
+            kernel._integral_rain(lx_bound, (kernel.log_rain_m, y_bound_p[1]),
                                   btype=UPVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_3_bot_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(-1.5, 0.05)
-        b = add_logs(-0.5, 0.)
-        lxm = -1.5
-        lxp = -0.5
-        cross_x = sub_logs(a, kernel.log_rain_m)
+    def test_kernel_integral_ly_spans_rain_m_lower_crossing_both_vary(self):
+        """Check kernel_integral, lower crosses y=rain_m, upper varies."""
+        kernel = self.kernel
+        lx_bound = (-1.5, -0.5)
+        y_bound_p = (add_logs(-1.5, 0.05), add_logs(-0.5, 0.))
+        cross_x = sub_logs(y_bound_p[0], kernel.log_rain_m)
         expected = \
-            kernel._integral_cloud((cross_x, lxp),
-                                   (a, kernel.log_rain_m), btype=LOVA)
+            kernel._integral_cloud((cross_x, lx_bound[1]),
+                                   (y_bound_p[0], kernel.log_rain_m),
+                                   btype=LOVA)
         expected += \
-            kernel._integral_rain((cross_x, lxp),
-                                  (kernel.log_rain_m, b), btype=UPVA)
+            kernel._integral_rain((cross_x, lx_bound[1]),
+                                  (kernel.log_rain_m, y_bound_p[1]),
+                                  btype=UPVA)
         expected += \
-            kernel._integral_rain((lxm, cross_x),
-                                  (a, b), btype=BOVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
+            kernel._integral_rain((lx_bound[0], cross_x),
+                                  y_bound_p, btype=BOVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
-    def test_kernel_integral_ly_spans_rain_m_btype_3_top_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(-1.5, 0.)
-        b = add_logs(-0.5, -0.1)
-        lxm = -1.5
-        lxp = -0.5
-        cross_x = sub_logs(b, kernel.log_rain_m)
+    def test_kernel_integral_ly_spans_rain_m_upper_crossing_both_vary(self):
+        """Check kernel_integral, upper crosses y=rain_m, lower varies."""
+        kernel = self.kernel
+        lx_bound = (-1.5, -0.5)
+        y_bound_p = (add_logs(-1.5, 0.), add_logs(-0.5, -0.1))
+        cross_x = sub_logs(y_bound_p[1], kernel.log_rain_m)
         expected = \
-            kernel._integral_cloud((lxm, cross_x),
-                                   (a, kernel.log_rain_m), btype=LOVA)
+            kernel._integral_cloud((lx_bound[0], cross_x),
+                                   (y_bound_p[0], kernel.log_rain_m),
+                                   btype=LOVA)
         expected += \
-            kernel._integral_cloud((cross_x, lxp), (a, b), btype=BOVA)
+            kernel._integral_cloud((cross_x, lx_bound[1]),
+                                   y_bound_p, btype=BOVA)
         expected += \
-            kernel._integral_rain((lxm, cross_x),
-                                  (kernel.log_rain_m, b), btype=UPVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
+            kernel._integral_rain((lx_bound[0], cross_x),
+                                  (kernel.log_rain_m, y_bound_p[1]), btype=UPVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_3_both_crossing(self):
-        kernel = LongKernel(self.constants)
-        a = add_logs(-1.5, 0.05)
-        b = add_logs(-0.5, -0.1)
-        lxm = -1.5
-        lxp = -0.5
-        x_low = sub_logs(a, kernel.log_rain_m)
-        x_high = sub_logs(b, kernel.log_rain_m)
+        """Check kernel_integral, upper and lower cross y=rain_m."""
+        kernel = self.kernel
+        lx_bound = (-1.5, -0.5)
+        y_bound_p = (add_logs(-1.5, 0.05), add_logs(-0.5, -0.1))
+        x_low = sub_logs(y_bound_p[0], kernel.log_rain_m)
+        x_high = sub_logs(y_bound_p[1], kernel.log_rain_m)
         expected = \
             kernel._integral_cloud((x_low, x_high),
-                                   (a, kernel.log_rain_m), btype=LOVA)
+                                   (y_bound_p[0], kernel.log_rain_m),
+                                   btype=LOVA)
         expected += \
-            kernel._integral_cloud((x_high, lxp), (a, b), btype=BOVA)
+            kernel._integral_cloud((x_high, lx_bound[1]), y_bound_p, btype=BOVA)
         expected += \
             kernel._integral_rain((x_low, x_high),
-                                  (kernel.log_rain_m, b), btype=UPVA)
+                                  (kernel.log_rain_m, y_bound_p[1]), btype=UPVA)
         expected += \
-            kernel._integral_rain((lxm, x_low),
-                                  (a, b), btype=BOVA)
-        actual = kernel.kernel_integral((lxm, lxp), (a, b), btype=BOVA)
+            kernel._integral_rain((lx_bound[0], x_low), y_bound_p, btype=BOVA)
+        actual = kernel.kernel_integral(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_integrate_over_bins(self):
-        # This is just to test that the parent class's implementation does not
-        # raise an error.
-        kernel = LongKernel(self.constants)
-        lx1 = -1.
-        lx2 = 0.
-        ly1 = -1.
-        ly2 = 0.
-        lz1 = 0.
-        lz2 = 1.
-        actual = kernel.integrate_over_bins((lx1, lx2), (ly1, ly2), (lz1, lz2))
+        """Check integrate_over_bins output.
+
+        This test is checks against the answer derived from an earlier version
+        of this code; it is therefore only useful as an integration test to
+        check for regressions.
+        """
+        kernel = self.kernel
+        lx_bound = (-1., 0.)
+        ly_bound = (-1., 0.)
+        lz_bound = (0., 1.)
+        actual = kernel.integrate_over_bins(lx_bound, ly_bound, lz_bound)
         expected = 3.1444320613930285e-09
         self.assertAlmostEqual(actual, expected, places=20)
 
@@ -816,10 +857,12 @@ class TestHallKernel(unittest.TestCase):
         self.kernel = HallKernel(self.constants, 'ScottChen')
 
     def test_bad_efficiency_string_raises_error(self):
+        """Check error raised if initialized with a bad efficiency_string."""
         with self.assertRaises(ValueError):
             HallKernel(self.constants, 'nonsense')
 
     def test_kernel_d(self):
+        """Check kernel_d against the Hall kernel formula."""
         const = self.constants
         d1 = 10.e-6
         d2 = 100.e-6
@@ -828,9 +871,11 @@ class TestHallKernel(unittest.TestCase):
         expected *= sc_efficiency(d1, d2)
         expected *= 0.25 * np.pi * (d1 + d2)**2
         self.assertAlmostEqual(actual / expected, 1.)
+        # pylint: disable-next=arguments-out-of-order
         self.assertEqual(actual, self.kernel.kernel_d(d2, d1))
 
     def test_kernel_lx(self):
+        """Check that kernel_lx correctly converts kernel_d output."""
         const = self.constants
         d1 = 10.e-6
         d2 = 100.e-6
@@ -841,34 +886,29 @@ class TestHallKernel(unittest.TestCase):
         actual = self.kernel.kernel_lx(lx1, lx2)
         expected = self.kernel.kernel_d(d1, d2) / (x1 * x2)
         self.assertAlmostEqual(actual / expected, 1.)
+        # pylint: disable-next=arguments-out-of-order
         self.assertEqual(actual, self.kernel.kernel_lx(lx2, lx1))
 
     def test_kernel_integral(self):
-        a = -1.
-        afun = lambda lx: sub_logs(a, lx)
-        b = 0.
-        bfun = lambda lx: sub_logs(b, lx)
-        lxm = -2.5
-        lxp = -2.
-        f = lambda ly, lx: np.exp(lx) * self.kernel.kernel_lx(lx, ly)
-        btype = CNST
-        actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
-        expected, _ = dblquad(f, lxm, lxp, a, b)
-        self.assertAlmostEqual(actual / expected, 1.)
-        btype = LOVA
-        actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
-        expected, _ = dblquad(f, lxm, lxp, afun, b)
-        self.assertAlmostEqual(actual / expected, 1.)
-        btype = UPVA
-        actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
-        expected, _ = dblquad(f, lxm, lxp, a, bfun)
-        self.assertAlmostEqual(actual / expected, 1.)
-        btype = BOVA
-        actual = self.kernel.kernel_integral((lxm, lxp), (-1., 0.), btype)
-        expected, _ = dblquad(f, lxm, lxp, afun, bfun)
-        self.assertAlmostEqual(actual / expected, 1.)
+        """Check kernel_integral vs. numerical integration, for all btypes."""
+        lx_bound = (-2.5, -2.)
+        y_bound_p = (-1., 0.)
+        def f(ly, lx):
+            return np.exp(lx) * self.kernel.kernel_lx(lx, ly)
+        def g(lx):
+            return sub_logs(y_bound_p[0], lx)
+        def h(lx):
+            return sub_logs(y_bound_p[1], lx)
+        btypes = [CNST, LOVA, UPVA, BOVA]
+        gs = [y_bound_p[0], g, y_bound_p[0], g]
+        hs = [y_bound_p[1], y_bound_p[1], h, h]
+        for btype, g, h in zip(btypes, gs, hs):
+            actual = self.kernel.kernel_integral(lx_bound, y_bound_p, btype)
+            expected, _ = dblquad(f, lx_bound[0], lx_bound[1], g, h)
+            self.assertAlmostEqual(actual / expected, 1.)
 
     def test_kernel_integral_skips_close_x_bounds(self):
+        """Check kernel_integral returns 0 for extremely narrow bins."""
         lx1 = -3.
         lx2 = lx1 + 1.e-14
         actual = self.kernel.kernel_integral((lx1, lx2), (-1., 0.), btype=CNST)
