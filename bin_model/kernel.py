@@ -309,7 +309,6 @@ class Kernel(ABC):
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
         """
-        pass
 
     def integrate_over_bins(self, lx_bound, ly_bound, lz_bound):
         """Integrate kernel over a relevant domain given x, y, and z bins.
@@ -333,7 +332,6 @@ class Kernel(ABC):
     @abstractmethod
     def to_netcdf(self, netcdf_file):
         """Write internal state to netCDF file."""
-        pass
 
     @classmethod
     def from_netcdf(cls, netcdf_file, constants):
