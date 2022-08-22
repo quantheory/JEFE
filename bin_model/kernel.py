@@ -14,6 +14,7 @@
 
 """Classes for construction of kernels for use in JEFE's bin model."""
 
+from abc import ABC, abstractmethod
 import enum
 
 import numpy as np
@@ -139,7 +140,155 @@ class BoundType(enum.Flag):
         return bool(self & BoundType.UPPER_VARIES)
 
 
-class Kernel:
+def find_corners(ly_bound, lz_bound):
+    """Returns lx-coordinates of four corners of an integration region.
+
+    Arguments:
+    ly_bound - Lower and upper bounds of y bin.
+    lz_bound - Lower and upper bounds of z bin.
+
+    If we are calculating the transfer of mass from bin x to bin z through
+    collisions with bin y, then we require add_logs(lx, ly) to be in the
+    proper lz range. For a given y bin and z bin, the values of lx and ly
+    that satisfy this condition form a sort of warped quadrilateral. This
+    function returns the lx coordinates of that quadrilateral's corners, in
+    the order:
+
+        (bottom_left, top_left, bottom_right, top_right)
+
+    This is all true if the y bin is strictly less than the z bin, but if
+    the y bin and z bin overlap, then some of these corners will go to
+    infinity/fail to exist, in which case `None` is returned:
+     - If `ly_bound[1] >= lz_bound[0]`, then `top_left` is `None`.
+     - If `ly_bound[1] >= lz_bound[1]`, then `top_right` is also `None`.
+     - If `ly_bound[0] >= lz_bound[0]`, then `bottom_left` is `None`.
+     - If `ly_bound[0] >= lz_bound[1]`, i.e. the entire y bin is above the z
+       bin, then all returned values are `None`.
+    """
+    if not ly_bound[1] > ly_bound[0]:
+        raise ValueError("upper y bin limit not larger than"
+                         " lower y bin limit")
+    if not lz_bound[1] > lz_bound[0]:
+        raise ValueError("upper z bin limit not larger than"
+                         " lower z bin limit")
+    if lz_bound[0] > ly_bound[0]:
+        bottom_left = sub_logs(lz_bound[0], ly_bound[0])
+    else:
+        bottom_left = None
+    if lz_bound[0] > ly_bound[1]:
+        top_left = sub_logs(lz_bound[0], ly_bound[1])
+    else:
+        top_left = None
+    if lz_bound[1] > ly_bound[0]:
+        bottom_right = sub_logs(lz_bound[1], ly_bound[0])
+    else:
+        bottom_right = None
+    if lz_bound[1] > ly_bound[1]:
+        top_right = sub_logs(lz_bound[1], ly_bound[1])
+    else:
+        top_right = None
+    return (bottom_left, top_left, bottom_right, top_right)
+
+def min_max_ly(lx_bound, y_bound_p, btype):
+    """Find the bounds of y values for a particular integral.
+
+    Arguments:
+    lx_bound - Bounds for l_x.
+    y_bound_p - Bound parameters for l_y.
+    btype - Boundary type for l_y integrals.
+
+    If a particular bound is an l_y value according to the btype, then the
+    corresponding y_bound_p entry is returned for that bound. If the bound
+    is an l_z value, the corresponding l_y min or max is returned.
+    """
+    if btype.lower_varies():
+        min_ly = sub_logs(y_bound_p[0], lx_bound[1])
+    else:
+        min_ly = y_bound_p[0]
+    if btype.upper_varies():
+        max_ly = sub_logs(y_bound_p[1], lx_bound[0])
+    else:
+        max_ly = y_bound_p[1]
+    return (min_ly, max_ly)
+
+def get_lxs_and_btypes(lx_bound, ly_bound, lz_bound):
+    """Find the bin x bounds and integration types for a bin set.
+
+    Arguments:
+    lx_bound - Bounds for x bin (source bin).
+    ly_bound - Bounds for y bin (colliding bin).
+    lz_bound - Bounds for z bin (destination bin).
+
+    Returns a tuple `(lxs, btypes)`, where lxs is a list of integration
+    bounds of length 2 to 4, and btypes is a list of boundary types of size
+    one less than lxs.
+
+    If the integration region is of size zero, lists of size zero are
+    returned.
+    """
+    if not lx_bound[1] > lx_bound[0]:
+        raise ValueError("upper x bin limit not larger than"
+                         " lower x bin limit")
+    (bl, tl, br, tr) = find_corners(ly_bound, lz_bound)
+    # Cases where there is no region of integration.
+    if (br is None) or (tl is not None and lx_bound[1] <= tl) \
+       or (lx_bound[0] >= br):
+        return [], []
+    # Figure out whether bl or tr is smaller. If both are `None` (i.e. they
+    # are at -Infinity), it doesn't matter, as the logic below will use the
+    # lx1 to remove this part of the list.
+    if bl is None or (tr is not None and bl <= tr):
+        lxs = [tl, bl, tr, br]
+        btypes = [BoundType.LOWER_VARIES,
+                  BoundType.CONSTANT,
+                  BoundType.UPPER_VARIES]
+    else:
+        lxs = [tl, tr, bl, br]
+        btypes = [BoundType.LOWER_VARIES,
+                  BoundType.BOTH_VARY,
+                  BoundType.UPPER_VARIES]
+    if lxs[0] is None or lx_bound[0] > lxs[0]:
+        for _ in range(len(btypes)):
+            if lxs[1] is None or lx_bound[0] > lxs[1]:
+                del lxs[0]
+                del btypes[0]
+            else:
+                lxs[0] = lx_bound[0]
+                break
+    if lx_bound[1] < lxs[-1]:
+        for _ in range(len(btypes)):
+            if lx_bound[1] >= lxs[-2]:
+                lxs[-1] = lx_bound[1]
+                break
+            del lxs[-1]
+            del btypes[-1]
+    return lxs, btypes
+
+def get_y_bound_p(ly_bound, lz_bound, btypes):
+    """Find y bound parameters from y and z bin bounds and btypes.
+
+    Arguments:
+    ly_bound - Lower and upper bounds of y bin.
+    lz_bound - Lower and upper bounds of z bin.
+    btypes - List of boundary types for l_y integrals.
+
+    Returns an array of shape `(len(btypes), 2)`, which contains the lower
+    and upper y bound parameters for each btype in the list.
+    """
+    y_bound_p = np.zeros((len(btypes), 2))
+    for i, btype in enumerate(btypes):
+        if btype.lower_varies():
+            y_bound_p[i,0] = lz_bound[0]
+        else:
+            y_bound_p[i,0] = ly_bound[0]
+        if btype.upper_varies():
+            y_bound_p[i,1] = lz_bound[1]
+        else:
+            y_bound_p[i,1] = ly_bound[1]
+    return y_bound_p
+
+
+class Kernel(ABC):
     """
     Represent a collision kernel for the bin model.
     """
@@ -147,153 +296,7 @@ class Kernel:
     kernel_type_str_len = 32
     """Length of kernel type string written to file."""
 
-    def find_corners(self, ly_bound, lz_bound):
-        """Returns lx-coordinates of four corners of an integration region.
-
-        Arguments:
-        ly_bound - Lower and upper bounds of y bin.
-        lz_bound - Lower and upper bounds of z bin.
-
-        If we are calculating the transfer of mass from bin x to bin z through
-        collisions with bin y, then we require add_logs(lx, ly) to be in the
-        proper lz range. For a given y bin and z bin, the values of lx and ly
-        that satisfy this condition form a sort of warped quadrilateral. This
-        function returns the lx coordinates of that quadrilateral's corners, in
-        the order:
-
-            (bottom_left, top_left, bottom_right, top_right)
-
-        This is all true if the y bin is strictly less than the z bin, but if
-        the y bin and z bin overlap, then some of these corners will go to
-        infinity/fail to exist, in which case `None` is returned:
-         - If `ly_bound[1] >= lz_bound[0]`, then `top_left` is `None`.
-         - If `ly_bound[1] >= lz_bound[1]`, then `top_right` is also `None`.
-         - If `ly_bound[0] >= lz_bound[0]`, then `bottom_left` is `None`.
-         - If `ly_bound[0] >= lz_bound[1]`, i.e. the entire y bin is above the z
-           bin, then all returned values are `None`.
-        """
-        if not ly_bound[1] > ly_bound[0]:
-            raise ValueError("upper y bin limit not larger than"
-                             " lower y bin limit")
-        if not lz_bound[1] > lz_bound[0]:
-            raise ValueError("upper z bin limit not larger than"
-                             " lower z bin limit")
-        if lz_bound[0] > ly_bound[0]:
-            bottom_left = sub_logs(lz_bound[0], ly_bound[0])
-        else:
-            bottom_left = None
-        if lz_bound[0] > ly_bound[1]:
-            top_left = sub_logs(lz_bound[0], ly_bound[1])
-        else:
-            top_left = None
-        if lz_bound[1] > ly_bound[0]:
-            bottom_right = sub_logs(lz_bound[1], ly_bound[0])
-        else:
-            bottom_right = None
-        if lz_bound[1] > ly_bound[1]:
-            top_right = sub_logs(lz_bound[1], ly_bound[1])
-        else:
-            top_right = None
-        return (bottom_left, top_left, bottom_right, top_right)
-
-    def min_max_ly(self, lx_bound, y_bound_p, btype):
-        """Find the bounds of y values for a particular integral.
-
-        Arguments:
-        lx_bound - Bounds for l_x.
-        y_bound_p - Bound parameters for l_y.
-        btype - Boundary type for l_y integrals.
-
-        If a particular bound is an l_y value according to the btype, then the
-        corresponding y_bound_p entry is returned for that bound. If the bound
-        is an l_z value, the corresponding l_y min or max is returned.
-        """
-        if btype.lower_varies():
-            min_ly = sub_logs(y_bound_p[0], lx_bound[1])
-        else:
-            min_ly = y_bound_p[0]
-        if btype.upper_varies():
-            max_ly = sub_logs(y_bound_p[1], lx_bound[0])
-        else:
-            max_ly = y_bound_p[1]
-        return (min_ly, max_ly)
-
-    def get_lxs_and_btypes(self, lx_bound, ly_bound, lz_bound):
-        """Find the bin x bounds and integration types for a bin set.
-
-        Arguments:
-        lx_bound - Bounds for x bin (source bin).
-        ly_bound - Bounds for y bin (colliding bin).
-        lz_bound - Bounds for z bin (destination bin).
-
-        Returns a tuple `(lxs, btypes)`, where lxs is a list of integration
-        bounds of length 2 to 4, and btypes is a list of boundary types of size
-        one less than lxs.
-
-        If the integration region is of size zero, lists of size zero are
-        returned.
-        """
-        if not lx_bound[1] > lx_bound[0]:
-            raise ValueError("upper x bin limit not larger than"
-                             " lower x bin limit")
-        (bl, tl, br, tr) = self.find_corners(ly_bound, lz_bound)
-        # Cases where there is no region of integration.
-        if (br is None) or (tl is not None and lx_bound[1] <= tl) \
-           or (lx_bound[0] >= br):
-            return [], []
-        # Figure out whether bl or tr is smaller. If both are `None` (i.e. they
-        # are at -Infinity), it doesn't matter, as the logic below will use the
-        # lx1 to remove this part of the list.
-        if bl is None or (tr is not None and bl <= tr):
-            lxs = [tl, bl, tr, br]
-            btypes = [BoundType.LOWER_VARIES,
-                      BoundType.CONSTANT,
-                      BoundType.UPPER_VARIES]
-        else:
-            lxs = [tl, tr, bl, br]
-            btypes = [BoundType.LOWER_VARIES,
-                      BoundType.BOTH_VARY,
-                      BoundType.UPPER_VARIES]
-        if lxs[0] is None or lx_bound[0] > lxs[0]:
-            for _ in range(len(btypes)):
-                if lxs[1] is None or lx_bound[0] > lxs[1]:
-                    del lxs[0]
-                    del btypes[0]
-                else:
-                    lxs[0] = lx_bound[0]
-                    break
-        if lx_bound[1] < lxs[-1]:
-            for _ in range(len(btypes)):
-                if lx_bound[1] >= lxs[-2]:
-                    lxs[-1] = lx_bound[1]
-                    break
-                del lxs[-1]
-                del btypes[-1]
-        return lxs, btypes
-
-    def get_y_bound_p(self, ly_bound, lz_bound, btypes):
-        """Find y bound parameters from y and z bin bounds and btypes.
-
-        Arguments:
-        ly_bound - Lower and upper bounds of y bin.
-        lz_bound - Lower and upper bounds of z bin.
-        btypes - List of boundary types for l_y integrals.
-
-        Returns an array of shape `(len(btypes), 2)`, which contains the lower
-        and upper y bound parameters for each btype in the list.
-        """
-        y_bound_p = np.zeros((len(btypes), 2))
-        for i, btype in enumerate(btypes):
-            if btype.lower_varies():
-                y_bound_p[i,0] = lz_bound[0]
-            else:
-                y_bound_p[i,0] = ly_bound[0]
-            if btype.upper_varies():
-                y_bound_p[i,1] = lz_bound[1]
-            else:
-                y_bound_p[i,1] = ly_bound[1]
-        return y_bound_p
-
+    @abstractmethod
     def kernel_integral(self, lx_bound, y_bound_p, btype):
         r"""Computes an integral necessary for constructing the kernel tensor.
 
@@ -305,12 +308,8 @@ class Kernel:
         If K_f is the scaled kernel function, this returns:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
-
-        This docstring is attached to an unimplemented function on the base
-        Kernel class. Child classes should override this with an actual
-        implementation.
         """
-        raise NotImplementedError
+        pass
 
     def integrate_over_bins(self, lx_bound, ly_bound, lz_bound):
         """Integrate kernel over a relevant domain given x, y, and z bins.
@@ -324,17 +323,17 @@ class Kernel:
         region where the values of `(lx, ly)` are in the given bins, and where
         collisions produce masses in the z bin.
         """
-        lxs, btypes = self.get_lxs_and_btypes(lx_bound, ly_bound,
-                                              lz_bound)
-        y_bound_p = self.get_y_bound_p(ly_bound, lz_bound, btypes)
+        lxs, btypes = get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
+        y_bound_p = get_y_bound_p(ly_bound, lz_bound, btypes)
         output = 0.
         for i, btype in enumerate(btypes):
             output += self.kernel_integral(lxs[i:i+2], y_bound_p[i,:], btype)
         return output
 
+    @abstractmethod
     def to_netcdf(self, netcdf_file):
         """Write internal state to netCDF file."""
-        raise NotImplementedError
+        pass
 
     @classmethod
     def from_netcdf(cls, netcdf_file, constants):
@@ -478,7 +477,7 @@ class LongKernel(Kernel):
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y) dl_y dl_x
         """
         # Note that this function also checks that the btype is in bounds.
-        min_ly, max_ly = self.min_max_ly(lx_bound, y_bound_p, btype)
+        min_ly, max_ly = min_max_ly(lx_bound, y_bound_p, btype)
         # Fuzz factor allowing a bin to be considered pure cloud/rain even if
         # there is a tiny overlap with the other category.
         tol = 1.e-10

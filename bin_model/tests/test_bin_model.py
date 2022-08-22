@@ -3177,11 +3177,6 @@ class TestNetcdfFile(unittest.TestCase):
         kernel2 = self.NetcdfFile.read_kernel(self.constants)
         self.assertEqual(kernel.efficiency_name, kernel2.efficiency_name)
 
-    def test_ktens_to_netcdf_not_implemented(self):
-        kernel = Kernel()
-        with self.assertRaises(NotImplementedError):
-            self.NetcdfFile.write_kernel(kernel)
-
     def test_bad_kernel_type_raises(self):
         self.NetcdfFile.write_dimension('kernel_type_str_len',
                                         Kernel.kernel_type_str_len)

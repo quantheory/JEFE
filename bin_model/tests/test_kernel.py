@@ -100,110 +100,97 @@ class TestSCEfficiency(unittest.TestCase):
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
 
-class TestKernel(unittest.TestCase):
+class TestRegionUtils(unittest.TestCase):
     """
-    Test utility methods on Kernel objects.
-
-    Kernel is really supposed to be more of an abstract base class. If measures
-    are taken to prevent it from being constructed in the usual way, this
-    testing strategy will need to change.
+    Test methods that map out and decompose integration regions.
     """
-
-    def setUp(self):
-        self.kernel = Kernel()
 
     # pylint: disable-next=too-many-arguments
     def lxs_btypes_assert(self, lx_bound, ly_bound, lz_bound, expected_lxs,
                           expected_btypes):
         """Check lxs and btypes for given bounds.
 
-        Calls self.kernel.get_lxs_and_btypes and compares the result to the
-        supplied expected_lxs and expected_btypes lists.
+        Calls get_lxs_and_btypes and compares the result to the supplied
+        expected_lxs and expected_btypes lists.
 
         Since expected_lxs will typically include the output of find_corners,
         the strings "bl", "tl", "br", and "tr" can be part of the list, and if
         present will be substituted with the appropriate find_corners output.
+
         """
-        bl, tl, br, tr = self.kernel.find_corners(ly_bound, lz_bound)
+        bl, tl, br, tr = find_corners(ly_bound, lz_bound)
         replace_dict = {"bl": bl, "tl": tl, "br": br, "tr": tr}
         expected_lxs = [replace_dict[lx] if lx in replace_dict else lx
                         for lx in expected_lxs]
         actual_lxs, actual_btypes = \
-                self.kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
+            get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
         self.assertListEqual(actual_lxs, expected_lxs)
         self.assertListEqual(actual_btypes, expected_btypes)
 
     def test_find_corners_invalid(self):
         """Check find_corners raises an error given bad y or z bound values."""
-        kernel = self.kernel
         bad_bound = (1., 0.)
         good_bound = (2., 3.)
         with self.assertRaises(ValueError):
-            kernel.find_corners(bad_bound, good_bound)
+            find_corners(bad_bound, good_bound)
         with self.assertRaises(ValueError):
-            kernel.find_corners(good_bound, bad_bound)
+            find_corners(good_bound, bad_bound)
 
     def test_find_corners_bins_separated(self):
         """Check find_corners works when y and z bins do not overlap."""
-        kernel = self.kernel
         ly_bound = (0., 1.)
         lz_bound = (2., 3.)
         expected = (sub_logs(lz_bound[0], ly_bound[0]),
                     sub_logs(lz_bound[0], ly_bound[1]),
                     sub_logs(lz_bound[1], ly_bound[0]),
                     sub_logs(lz_bound[1], ly_bound[1]))
-        actual = kernel.find_corners(ly_bound, lz_bound)
+        actual = find_corners(ly_bound, lz_bound)
         self.assertAlmostEqual(actual, expected)
 
     def test_find_corners_bins_overlap(self):
         """Check find_corners works when y and z bins overlap."""
-        kernel = self.kernel
         lz_bound = (1., 3.)
         for ly_bound in ((0., 1.), (0., 2.)):
             expected = (sub_logs(lz_bound[0], ly_bound[0]),
                         None,
                         sub_logs(lz_bound[1], ly_bound[0]),
                         sub_logs(lz_bound[1], ly_bound[1]))
-            actual = kernel.find_corners(ly_bound, lz_bound)
+            actual = find_corners(ly_bound, lz_bound)
             self.assertAlmostEqual(actual, expected)
 
     def test_find_corners_y_encloses_z(self):
         """Check find_corners works when z bin is a subset of the y bin."""
-        kernel = self.kernel
         lz_bound = (1., 3.)
         for ly_bound in ((0., 3.), (0., 4.)):
             expected = (sub_logs(lz_bound[0], ly_bound[0]),
                         None,
                         sub_logs(lz_bound[1], ly_bound[0]),
                         None)
-            actual = kernel.find_corners(ly_bound, lz_bound)
+            actual = find_corners(ly_bound, lz_bound)
             self.assertAlmostEqual(actual, expected)
 
     def test_find_corners_z_encloses_y(self):
         """Check find_corners works when y bin is a subset of the z bin."""
-        kernel = self.kernel
         lz_bound = (0., 3.)
         for ly_bound in ((0., 2.), (1., 2.)):
             expected = (None,
                         None,
                         sub_logs(lz_bound[1], ly_bound[0]),
                         sub_logs(lz_bound[1], ly_bound[1]))
-            actual = kernel.find_corners(ly_bound, lz_bound)
+            actual = find_corners(ly_bound, lz_bound)
             self.assertAlmostEqual(actual, expected)
 
     def test_find_corners_empty_set(self):
         """Check find_corners works when y bin is larger than the z bin."""
-        kernel = self.kernel
         expected = (None, None,
                     None, None)
         lz_bound = (0., 1.)
         for ly_bound in ((1., 3.), (2., 3.)):
-            actual = kernel.find_corners(ly_bound, lz_bound)
+            actual = find_corners(ly_bound, lz_bound)
             self.assertAlmostEqual(actual, expected)
 
     def test_min_max_ly(self):
         """Check that min_max_ly gives the right limits for each btype."""
-        kernel = self.kernel
         lx_bound = (0., 1.)
         y_bound_p = (2., 3.)
         y_bound_p_vary = (sub_logs(y_bound_p[0], lx_bound[1]),
@@ -214,21 +201,20 @@ class TestKernel(unittest.TestCase):
                      (y_bound_p[0], y_bound_p_vary[1]),
                      y_bound_p_vary]
         for btype, expected in zip(btypes, expecteds):
-            actual = kernel.min_max_ly(lx_bound, y_bound_p,
-                                       btype=btype)
+            actual = min_max_ly(lx_bound, y_bound_p,
+                                btype=btype)
             self.assertEqual(actual, expected)
 
     def test_get_lxs_and_btypes_assertions(self):
         """Check that get_lxs_and_btypes raises ValueError for bad bounds."""
-        kernel = self.kernel
         bad_bound = (0., -1.)
         good_bound = (0., 1.)
         with self.assertRaises(ValueError):
-            kernel.get_lxs_and_btypes(bad_bound, good_bound, good_bound)
+            get_lxs_and_btypes(bad_bound, good_bound, good_bound)
         with self.assertRaises(ValueError):
-            kernel.get_lxs_and_btypes(good_bound, bad_bound, good_bound)
+            get_lxs_and_btypes(good_bound, bad_bound, good_bound)
         with self.assertRaises(ValueError):
-            kernel.get_lxs_and_btypes(good_bound, good_bound, bad_bound)
+            get_lxs_and_btypes(good_bound, good_bound, bad_bound)
 
     def test_get_lxs_and_btypes_wide_lx(self):
         """Check get_lxs_and_btypes when lx range is too wide to matter."""
@@ -339,20 +325,12 @@ class TestKernel(unittest.TestCase):
 
     def test_get_y_bound_p(self):
         """Check get_y_bound_p for all BoundType values."""
-        kernel = self.kernel
         btypes = [CNST, LOVA, UPVA, BOVA]
         ly_bound = (0., 1.)
         lz_bound = (2., 3.)
-        y_bound_p = kernel.get_y_bound_p(ly_bound, lz_bound, btypes)
+        y_bound_p = get_y_bound_p(ly_bound, lz_bound, btypes)
         self.assertListEqual(list(y_bound_p[:,0]), [0., 2., 0., 2.])
         self.assertListEqual(list(y_bound_p[:,1]), [1., 1., 3., 3.])
-
-    def test_integrate_over_bins_raises(self):
-        """Check that the base class integrate_over_bins raises an error."""
-        kernel = self.kernel
-        bound = (0., 1.)
-        with self.assertRaises(NotImplementedError):
-            kernel.integrate_over_bins(bound, bound, bound)
 
 
 def reference_long_cloud(kc, lx_bound, y_bound_p):
@@ -830,9 +808,9 @@ class TestLongKernel(unittest.TestCase):
     def test_integrate_over_bins(self):
         """Check integrate_over_bins output.
 
-        This test is checks against the answer derived from an earlier version
-        of this code; it is therefore only useful as an integration test to
-        check for regressions.
+        This test checks against the answer derived from an earlier version of
+        this code; it is therefore only useful as an integration test to check
+        for regressions.
         """
         kernel = self.kernel
         lx_bound = (-1., 0.)
