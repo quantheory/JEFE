@@ -86,6 +86,7 @@ class TestSCEfficiency(unittest.TestCase):
         self.assertAlmostEqual(sc_efficiency(d1, d2),
                                (0.8 / (1. + x))**2,
                                places=2)
+        # pylint: disable=arguments-out-of-order
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
     def test_sc_efficiency_low_diameter(self):
@@ -95,6 +96,7 @@ class TestSCEfficiency(unittest.TestCase):
         d2 = x * d1
         self.assertAlmostEqual(sc_efficiency(d1, d2),
                                sc_efficiency(20.e-6, x * 20.e-6))
+        # pylint: disable=arguments-out-of-order
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
 
@@ -110,15 +112,35 @@ class TestKernel(unittest.TestCase):
     def setUp(self):
         self.kernel = Kernel()
 
+    def lxs_btypes_assert(self, lx_bound, ly_bound, lz_bound, expected_lxs,
+                          expected_btypes):
+        """Check lxs and btypes for given bounds.
+
+        Calls self.kernel.get_lxs_and_btypes and compares the result to the
+        supplied expected_lxs and expected_btypes lists.
+
+        Since expected_lxs will typically include the output of find_corners,
+        the strings "bl", "tl", "br", and "tr" can be part of the list, and if
+        present will be substituted with the appropriate find_corners output.
+        """
+        bl, tl, br, tr = self.kernel.find_corners(ly_bound, lz_bound)
+        replace_dict = {"bl": bl, "tl": tl, "br": br, "tr": tr}
+        expected_lxs = [replace_dict[lx] if lx in replace_dict else lx
+                        for lx in expected_lxs]
+        actual_lxs, actual_btypes = \
+                self.kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
+        self.assertListEqual(actual_lxs, expected_lxs)
+        self.assertListEqual(actual_btypes, expected_btypes)
+
     def test_find_corners_invalid(self):
         """Check find_corners raises an error given bad y or z bound values."""
         kernel = self.kernel
         bad_bound = (1., 0.)
         good_bound = (2., 3.)
         with self.assertRaises(ValueError):
-            actual = kernel.find_corners(bad_bound, good_bound)
+            kernel.find_corners(bad_bound, good_bound)
         with self.assertRaises(ValueError):
-            actual = kernel.find_corners(good_bound, bad_bound)
+            kernel.find_corners(good_bound, bad_bound)
 
     def test_find_corners_bins_separated(self):
         """Check find_corners works when y and z bins do not overlap."""
@@ -209,142 +231,110 @@ class TestKernel(unittest.TestCase):
 
     def test_get_lxs_and_btypes_wide_lx(self):
         """Check get_lxs_and_btypes when lx range is too wide to matter."""
-        kernel = self.kernel
         lx_bound = (-20., 20.)
         ly_bound = (0., 1.)
         # Case where lz has a large range well-separated from y bin.
         lz_bound = (2., 3.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [tl, bl, tr, br])
-        self.assertListEqual(actual_btypes,[LOVA, CNST, UPVA])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               ["tl", "bl", "tr", "br"],
+                               [LOVA, CNST, UPVA])
         # Case where lz has a narrow range close to y bin, leading to a narrow
         # region of integration.
         lz_bound = (1.01, 1.02)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [tl, tr, bl, br])
-        self.assertListEqual(actual_btypes, [LOVA, BOVA, UPVA])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               ["tl", "tr", "bl", "br"],
+                               [LOVA, BOVA, UPVA])
 
     def test_get_lxs_and_btypes_no_overlap(self):
         """Check get_lxs_and_btypes when x+y puts no particles in the z bin."""
-        kernel = self.kernel
         ly_bound = (0., 1.)
         lz_bound = (2., 3.)
         for lx_bound in ((19., 20.), (-20., -19.)):
-            actual_lxs, actual_btypes = \
-                kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-            self.assertListEqual(actual_lxs, [])
-            self.assertListEqual(actual_btypes, [])
+            self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                                   [],
+                                   [])
 
     def test_get_lxs_and_btypes_lower_lx(self):
         """Check get_lxs_and_btypes affected by lower lx bound.
 
         In these cases, the lower lx bound truncates the region from the left.
         """
-        kernel = self.kernel
         ly_bound = (0., 1.)
         lz_bound = (1.01, 2.)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
         # As lx lower bound increases, more and more of the region is cut off.
         for i, lx_bound in enumerate(((0.5, 20.), (1., 20.), (1.7, 20.))):
-            actual_lxs, actual_btypes = \
-                kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-            self.assertListEqual(actual_lxs, [lx_bound[0]] + [bl, tr, br][i:])
-            self.assertListEqual(actual_btypes, [LOVA, CNST, UPVA][i:])
+            self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                                   [lx_bound[0]] + ["bl", "tr", "br"][i:],
+                                   [LOVA, CNST, UPVA][i:])
 
     def test_get_lxs_and_btypes_upper_lx(self):
         """Check get_lxs_and_btypes affected by upper lx bound.
 
         In these cases, the upper lx bound truncates the region from the right.
         """
-        kernel = self.kernel
         ly_bound = (0., 1.)
         lz_bound = (1.01, 2.)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
         # As lx upper bound decreases, more and more of the region is cut off.
         for i, lx_bound in enumerate(((-20., 1.7), (-20., 1.), (-20., 0.5))):
-            actual_lxs, actual_btypes = \
-                kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-            self.assertListEqual(actual_lxs,
-                                 [tl, bl, tr][:3-i] + [lx_bound[1]])
-            self.assertListEqual(actual_btypes, [LOVA, CNST, UPVA][:3-i])
+            self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                                   ["tl", "bl", "tr"][:3-i] + [lx_bound[1]],
+                                   [LOVA, CNST, UPVA][:3-i])
 
     def test_get_lxs_and_btypes_missing_corners(self):
         """Check get_lxs_and_btypes with missing integration region corners.
 
         In these cases, some of the corners go to negative infinity.
         """
-        kernel = self.kernel
         lx_bound = (-20., 20.)
         ly_bound = (0., 1.)
         # No top left corner.
         lz_bound = (1., 2.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [lx_bound[0], bl, tr, br])
-        self.assertListEqual(actual_btypes, [LOVA, CNST, UPVA])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               [lx_bound[0], "bl", "tr", "br"],
+                               [LOVA, CNST, UPVA])
         # No bottom left corner.
         lz_bound = (0., 2.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [lx_bound[0], tr, br])
-        self.assertListEqual(actual_btypes, [CNST, UPVA])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               [lx_bound[0], "tr", "br"],
+                               [CNST, UPVA])
         # No top right corner.
         lz_bound = (0.5, 1.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [lx_bound[0], bl, br])
-        self.assertListEqual(actual_btypes, [BOVA, UPVA])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               [lx_bound[0], "bl", "br"],
+                               [BOVA, UPVA])
         # No bottom left or top right corner.
         lz_bound = (0., 1.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [lx_bound[0], br])
-        self.assertListEqual(actual_btypes, [UPVA])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               [lx_bound[0], "br"],
+                               [UPVA])
         # No bottom left or top right corner, upper x bound matters.
         lx_bound_lowupper = (-20, 0.)
         lz_bound = (0., 1.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound_lowupper, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, list(lx_bound_lowupper))
-        self.assertListEqual(actual_btypes, [UPVA])
+        self.lxs_btypes_assert(lx_bound_lowupper, ly_bound, lz_bound,
+                               list(lx_bound_lowupper),
+                               [UPVA])
         # No region at all.
         lz_bound = (-2., -1.)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [])
-        self.assertListEqual(actual_btypes, [])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               [],
+                               [])
 
     def test_get_lxs_and_btypes_infinite_lz_upper(self):
         """Check get_lxs_and_btypes when upper lz bound is infinity."""
         # Test specifying an infinite upper bound for lz.
-        kernel = self.kernel
         lx_bound = (-20., 20.)
         ly_bound = (0., 1.)
         lz_bound = (2., np.inf)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, [tl, bl, lx_bound[1]])
-        self.assertListEqual(actual_btypes, [LOVA, CNST])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               ["tl", "bl", lx_bound[1]],
+                               [LOVA, CNST])
         # Test specifying an infinite upper bound for lz when the lower bound
         # is the same as ly's.
         lx_bound = (-2., -1.)
         lz_bound = (0., np.inf)
-        actual_lxs, actual_btypes = \
-            kernel.get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
-        bl, tl, br, tr = kernel.find_corners(ly_bound, lz_bound)
-        self.assertListEqual(actual_lxs, list(lx_bound))
-        self.assertListEqual(actual_btypes, [CNST])
+        self.lxs_btypes_assert(lx_bound, ly_bound, lz_bound,
+                               list(lx_bound),
+                               [CNST])
 
     def test_get_y_bound_p(self):
         kernel = self.kernel
