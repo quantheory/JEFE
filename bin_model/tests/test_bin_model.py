@@ -134,7 +134,7 @@ class TestKernelTensor(unittest.TestCase):
                                        / ktens.scaling)
 
     def test_ktens_init_invalid_boundary_raises(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             ktens = KernelTensor(self.kernel, self.grid, boundary='nonsense')
 
     def test_ktens_init_boundary(self):
@@ -1522,7 +1522,7 @@ class TestModelState(unittest.TestCase):
         state.dsd_moment(3, cloud_only=True, rain_only=False)
         state.dsd_moment(3, cloud_only=False, rain_only=True)
         state.dsd_moment(3, cloud_only=False, rain_only=False)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             state.dsd_moment(3, cloud_only=True, rain_only=True)
 
     def test_dsd_cloud_moment(self):
@@ -3212,7 +3212,7 @@ class TestNetcdfFile(unittest.TestCase):
                                          'nonsense',
                                          'mass_grid_type_str_len',
                                          'Type of mass grid')
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             self.NetcdfFile.read_mass_grid(self.constants)
 
     def test_ktens_io(self):

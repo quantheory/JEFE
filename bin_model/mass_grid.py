@@ -47,6 +47,8 @@ class MassGrid:
         bin_bounds_m = np.exp(self.bin_bounds)
         self.bin_bounds_d = constants.scaled_mass_to_diameter(bin_bounds_m)
         self.bin_widths = self.bin_bounds[1:] - self.bin_bounds[:-1]
+        self._lrm, self._rm_idx = \
+            self._calculate_rain_threshold_info(constants.rain_m)
 
     def find_bin(self, lx):
         """Find the index of the bin containing the given mass value.
@@ -130,8 +132,8 @@ class MassGrid:
         """
         if boundary is None:
             boundary = 'open'
-        assert boundary in ('open', 'closed'), \
-            "invalid boundary specified: " + str(boundary)
+        if boundary not in ('open', 'closed'):
+            raise ValueError("invalid boundary specified: " + str(boundary))
         nb = self.num_bins
         bb = self.bin_bounds
         idxs = np.zeros((nb, nb), dtype=np.int_)
@@ -151,6 +153,20 @@ class MassGrid:
         max_num = nums.max()
         return idxs, nums, max_num
 
+    def _calculate_rain_threshold_info(self, rain_m):
+        """Return information about cloud-rain threshold in the grid.
+
+        Arguments:
+        rain_m - Nondimensionalized cloud-rain threshold mass.
+
+        Returns a tuple containing log(rain_m) and the bin where the threshold
+        is present.
+        """
+        bb = self.bin_bounds
+        lrm = max(min(np.log(rain_m), bb[-1]), bb[0])
+        rm_idx = min(max(self.find_bin(lrm), 0), self.num_bins-1)
+        return (lrm, rm_idx)
+
     def moment_weight_vector(self, n, cloud_only=None, rain_only=None):
         """Calculate weight vector corresponding to a moment of the DSD.
 
@@ -169,45 +185,34 @@ class MassGrid:
             cloud_only = False
         if rain_only is None:
             rain_only = False
-        assert not (cloud_only and rain_only), \
-            "moments cannot be both cloud-only and rain-only"
-        const = self.constants
-        nb = self.num_bins
+        if cloud_only and rain_only:
+            raise RuntimeError("moment cannot be both cloud-only and rain-only")
         bb = self.bin_bounds
         bw = self.bin_widths
-        if cloud_only or rain_only:
-            log_thresh = np.log(const.rain_m)
-            thresh_idx = self.find_bin(log_thresh)
-            if 0 <= thresh_idx < nb:
-                thresh_frac = (log_thresh - bb[thresh_idx]) / bw[thresh_idx]
-            elif thresh_idx < 0:
-                thresh_idx = 0
-                thresh_frac = 0.
-            else:
-                thresh_idx = nb-1
-                thresh_frac = 1.
         if n == 3:
             weight_vector = bw.copy()
             if cloud_only:
-                weight_vector[thresh_idx+1:] = 0.
-                weight_vector[thresh_idx] *= thresh_frac
+                weight_vector[self._rm_idx+1:] = 0.
+                weight_vector[self._rm_idx] *= \
+                    (self._lrm - bb[self._rm_idx]) / bw[self._rm_idx]
             elif rain_only:
-                weight_vector[:thresh_idx] = 0.
-                weight_vector[thresh_idx] *= 1. - thresh_frac
+                weight_vector[:self._rm_idx] = 0.
+                weight_vector[self._rm_idx] *= \
+                    1. - (self._lrm - bb[self._rm_idx]) / bw[self._rm_idx]
         else:
             exponent = n / 3. - 1.
             weight_vector = np.exp(exponent * bb) / exponent
             weight_vector = weight_vector[1:] - weight_vector[:-1]
             if cloud_only:
-                weight_vector[thresh_idx+1:] = 0.
-                weight_vector[thresh_idx] = \
-                    np.exp(exponent * log_thresh) / exponent \
-                    - np.exp(exponent * bb[thresh_idx]) / exponent
+                weight_vector[self._rm_idx+1:] = 0.
+                weight_vector[self._rm_idx] = \
+                    np.exp(exponent * self._lrm) / exponent \
+                    - np.exp(exponent * bb[self._rm_idx]) / exponent
             elif rain_only:
-                weight_vector[:thresh_idx] = 0.
-                weight_vector[thresh_idx] = \
-                    np.exp(exponent * bb[thresh_idx+1]) / exponent \
-                    - np.exp(exponent * log_thresh) / exponent
+                weight_vector[:self._rm_idx] = 0.
+                weight_vector[self._rm_idx] = \
+                    np.exp(exponent * bb[self._rm_idx+1]) / exponent \
+                    - np.exp(exponent * self._lrm) / exponent
         return weight_vector
 
     def to_netcdf(self, netcdf_file):
@@ -237,7 +242,7 @@ class MassGrid:
             d_max = netcdf_file.read_scalar('d_max')
             num_bins = netcdf_file.read_dimension('num_bins')
             return GeometricMassGrid(constants, d_min, d_max, num_bins)
-        assert False, "unrecognized mass_grid_type in file"
+        raise RuntimeError("unrecognized mass_grid_type in file")
 
 
 class GeometricMassGrid(MassGrid):
