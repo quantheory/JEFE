@@ -40,11 +40,6 @@ class TestMassGrid(ArrayTestCase):
                                          d_min=1.e-6,
                                          d_max=2.e-6,
                                          num_bins=3)
-        # Fine grid.
-        self.fine_grid = GeometricMassGrid(self.constants,
-                                           d_min=1.e-6,
-                                           d_max=2.e-6,
-                                           num_bins=6)
 
     def test_find_bin(self):
         """Check that find_bin works on masses within the grid."""
@@ -133,7 +128,11 @@ class TestMassGrid(ArrayTestCase):
 
     def test_find_sum_bins_all_exceeding_range(self):
         """Check find_sum_bins is correct when all output is outside grid."""
-        grid = self.fine_grid
+        # Finer than mass-doubling grid needed to guarantee zero overlap.
+        grid = GeometricMassGrid(self.constants,
+                                 d_min=1.e-6,
+                                 d_max=2.e-6,
+                                 num_bins=6)
         lx1 = grid.bin_bounds[5]
         lx2 = grid.bin_bounds[6]
         ly1 = grid.bin_bounds[5]
@@ -185,6 +184,85 @@ class TestMassGrid(ArrayTestCase):
         """Check construct_sparsity_pattern error for invalid boundary."""
         with self.assertRaises(ValueError):
             self.geo_grid.construct_sparsity_structure(boundary='nonsense')
+
+
+class TestMomentWeightVector(ArrayTestCase):
+    """
+    Tests of MassGrid.moment_weight_vector.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4)
+        # Irregular grid spanning cloud/rain boundary.
+        wv_bounds_d = [2.5e-5, 7.5e-5, 1.25e-4, 1.75e-4]
+        wv_bounds = np.log(np.array([
+            self.constants.diameter_to_scaled_mass(d) for d in wv_bounds_d
+        ]))
+        self.wv_grid = MassGrid(self.constants, wv_bounds)
+
+    def test_moment_weight_vector_cloud_only_and_rain_only_raises(self):
+        """Check moment_weight_vector disallows cloud_only with rain_only."""
+        with self.assertRaises(RuntimeError):
+            self.wv_grid.moment_weight_vector(3,
+                                              cloud_only=True, rain_only=True)
+
+    def test_moment_weight_vector_moment_3(self):
+        """Check moment_weight_vector for 3rd moment."""
+        actual = self.wv_grid.moment_weight_vector(3)
+        self.assertArrayAlmostEqual(actual, self.wv_grid.bin_widths)
+
+    def test_moment_weight_vector_moment_3_cloud_only(self):
+        """Check moment_weight_vector for 3rd cloud moment."""
+        actual = self.wv_grid.moment_weight_vector(3, cloud_only=True)
+        expected = np.array([
+            self.wv_grid.bin_widths[0],
+            np.log(self.constants.rain_m) - self.wv_grid.bin_bounds[1],
+            0.,
+        ])
+        self.assertArrayAlmostEqual(actual, expected)
+
+    def test_moment_weight_vector_moment_3_rain_only(self):
+        """Check moment_weight_vector for 3rd rain moment."""
+        actual = self.wv_grid.moment_weight_vector(3, rain_only=True)
+        expected = np.array([
+            0.,
+            self.wv_grid.bin_bounds[2] - np.log(self.constants.rain_m),
+            self.wv_grid.bin_widths[2],
+        ])
+        self.assertArrayAlmostEqual(actual, expected)
+
+    def test_moment_weight_vector_moment_0(self):
+        """Check moment_weight_vector for 0th moment."""
+        actual = self.wv_grid.moment_weight_vector(0)
+        exp_bb = np.exp(-self.wv_grid.bin_bounds)
+        expected = exp_bb[:-1] - exp_bb[1:]
+        self.assertArrayAlmostEqual(actual, expected)
+
+    def test_moment_weight_vector_moment_0_cloud_only(self):
+        """Check moment_weight_vector for 0th cloud moment."""
+        actual = self.wv_grid.moment_weight_vector(0, cloud_only=True)
+        expected = np.array([
+            np.exp(-self.wv_grid.bin_bounds[0])
+            - np.exp(-self.wv_grid.bin_bounds[1]),
+            np.exp(-self.wv_grid.bin_bounds[1])
+            - 1./self.constants.rain_m,
+            0.,
+        ])
+        self.assertArrayAlmostEqual(actual, expected)
+
+    def test_moment_weight_vector_moment_0_rain_only(self):
+        """Check moment_weight_vector for 0th rain moment."""
+        actual = self.wv_grid.moment_weight_vector(0, rain_only=True)
+        expected = np.array([
+            0.,
+            1./self.constants.rain_m
+            - np.exp(-self.wv_grid.bin_bounds[2]),
+            np.exp(-self.wv_grid.bin_bounds[2])
+            - np.exp(-self.wv_grid.bin_bounds[3]),
+        ])
+        self.assertArrayAlmostEqual(actual, expected)
 
 
 class TestGeometricMassGrid(ArrayTestCase):
