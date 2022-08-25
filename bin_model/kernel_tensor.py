@@ -30,22 +30,6 @@ class KernelTensor():
     data (optional) - Precalculated kernel tensor data.
 
     Exactly one of the kernel or data arguments must be supplied.
-
-    Attributes:
-    grid - Stored reference to corresponding grid.
-    scaling - Effect of the kernel has been scaled down by this amount.
-    boundary - Upper boundary condition for this kernel.
-    idxs, nums, max_num - Outputs of `MassGrid.construct_sparsity_structure`.
-    data - Data corresponding to nonzero elements of the tensor kernel.
-           This is represented by an array of shape:
-               (num_bins, num_bins, max_num)
-
-    Methods:
-    calc_rate
-    to_netcdf
-
-    Class Methods:
-    from_netcdf
     """
 
     boundary_str_len = 16
