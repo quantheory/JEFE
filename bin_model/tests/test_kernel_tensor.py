@@ -12,6 +12,8 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+"""Test kernel_tensor module."""
+
 import numpy as np
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid
@@ -29,6 +31,9 @@ class TestKernelTensor(ArrayTestCase):
                                         rho_air=1.2,
                                         std_diameter=1.e-4,
                                         rain_d=1.e-4)
+        self.scaling = self.constants.mass_conc_scale \
+            * self.constants.time_scale \
+            / self.constants.std_mass
         self.kernel = LongKernel(self.constants)
         self.num_bins = 6
         self.grid = GeometricMassGrid(self.constants,
@@ -36,70 +41,47 @@ class TestKernelTensor(ArrayTestCase):
                                       d_max=2.e-6,
                                       num_bins=self.num_bins)
 
+    def test_ktens_init_raises_without_kernel_or_data(self):
+        """Check KernelTensor.__init__ raises without kernel information."""
+        with self.assertRaises(RuntimeError):
+            KernelTensor(self.grid)
+
+    def test_ktens_init_raises_with_both_kernel_and_data(self):
+        """Check KernelTensor.__init__ raises with both kernel and data set."""
+        with self.assertRaises(RuntimeError):
+            KernelTensor(self.grid, kernel=self.kernel, data=np.zeros((2,2)))
+
     def test_ktens_init(self):
+        """Check data produced by KernelTensor.__init__ with kernel input."""
         nb = self.num_bins
         bb = self.grid.bin_bounds
-        ktens = KernelTensor(self.kernel, self.grid)
-        self.assertEqual(ktens.boundary, 'open')
-        idxs, nums, max_num = self.grid.construct_sparsity_structure()
-        self.assertEqual(ktens.idxs.shape, idxs.shape)
-        for i in range(len(idxs.flat)):
-            self.assertEqual(ktens.idxs.flat[i], idxs.flat[i])
-        self.assertEqual(ktens.nums.shape, nums.shape)
-        for i in range(len(nums.flat)):
-            self.assertEqual(ktens.nums.flat[i], nums.flat[i])
-        self.assertEqual(ktens.max_num, max_num)
-        self.assertEqual(ktens.data.shape, (nb, nb, max_num))
-        lx1 = bb[0]
-        lx2 = bb[1]
-        ly1 = bb[0]
-        ly2 = bb[1]
-        lz1 = bb[2]
-        lz2 = bb[3]
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[0,0,0], expected / ktens.scaling)
-        lx1 = bb[0]
-        lx2 = bb[1]
-        ly1 = bb[1]
-        ly2 = bb[2]
-        lz1 = bb[3]
-        lz2 = bb[4]
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[0,1,1], expected / ktens.scaling)
-        expected = self.kernel.integrate_over_bins((ly1, ly2), (lx1, lx2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[1,0,1], expected / ktens.scaling)
-        lx1 = bb[5]
-        lx2 = bb[6]
-        ly1 = bb[5]
-        ly2 = bb[6]
-        lz1 = bb[6]
-        lz2 = np.inf
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[5,5,0], expected / ktens.scaling)
-        lx1 = bb[0]
-        lx2 = bb[1]
-        ly1 = bb[5]
-        ly2 = bb[6]
-        lz1 = bb[5]
-        lz2 = bb[6]
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[0,5,0], expected / ktens.scaling)
-        lx1 = bb[0]
-        lx2 = bb[1]
-        ly1 = bb[5]
-        ly2 = bb[6]
-        lz1 = bb[6]
-        lz2 = np.inf
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[0,5,1], expected / ktens.scaling)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
+        self.assertEqual(ktens.data.shape, (nb, nb, 2))
+        # Check the following six cases:
+        # 1. Two equal bins' output to the smallest nonzero output bin.
+        # 2. y > x, output to a larger output bin.
+        # 3. x > y, output to a larger output bin.
+        # 4. x and y are largest bin, output to out-of-range bin.
+        # 5. y >> x, output to y bin.
+        # 6. y is largest bin, output to out-of-range bin.
+        x_idxs = [0, 0, 1, 5, 0, 0]
+        y_idxs = [0, 1, 0, 5, 5, 5]
+        z_idxs = [2, 3, 3, 6, 5, 6]
+        for x_idx, y_idx, z_idx, in zip(x_idxs, y_idxs, z_idxs):
+            lx_bound = bb[x_idx:x_idx+2]
+            ly_bound = bb[y_idx:y_idx+2]
+            if z_idx < nb:
+                lz_bound = bb[z_idx:z_idx+2]
+            else:
+                lz_bound = (bb[z_idx], np.inf)
+            k = z_idx - ktens.idxs[x_idx,y_idx]
+            expected = self.kernel.integrate_over_bins(lx_bound, ly_bound,
+                                                       lz_bound)
+            self.assertAlmostEqual(ktens.data[x_idx,y_idx,k],
+                                   expected * self.scaling)
 
     def test_ktens_init_scaling(self):
+        """Check application of dimension scalings in KernelTensor.__init__."""
         const = ModelConstants(rho_water=1000.,
                                rho_air=1.2,
                                std_diameter=1.e-4,
@@ -111,70 +93,59 @@ class TestKernelTensor(ArrayTestCase):
                                  d_min=1.e-6,
                                  d_max=2.e-6,
                                  num_bins=self.num_bins)
-        ktens = KernelTensor(kernel, grid)
-        self.assertEqual(ktens.scaling, const.std_mass
-                             / (const.mass_conc_scale * const.time_scale))
-        const = ModelConstants(rho_water=1000.,
-                               rho_air=1.2,
-                               std_diameter=1.e-4,
-                               rain_d=1.e-4,
-                               mass_conc_scale=1.,
-                               time_scale=1.)
+        ktens = KernelTensor(grid, kernel=kernel)
+        const_noscale = ModelConstants(rho_water=1000.,
+                                       rho_air=1.2,
+                                       std_diameter=1.e-4,
+                                       rain_d=1.e-4,
+                                       mass_conc_scale=1.,
+                                       time_scale=1.)
         kernel = LongKernel(const)
         grid = GeometricMassGrid(const,
                                  d_min=1.e-6,
                                  d_max=2.e-6,
                                  num_bins=self.num_bins)
-        ktens_noscale = KernelTensor(kernel, grid)
-        self.assertEqual(ktens.data.shape, ktens_noscale.data.shape)
-        for i in range(len(ktens.data.flat)):
-            self.assertAlmostEqual(ktens.data.flat[i],
-                                   ktens_noscale.data.flat[i]
-                                       * const.std_mass
-                                       / ktens.scaling)
+        ktens_noscale = KernelTensor(grid, kernel=kernel)
+        self.assertArrayAlmostEqual(ktens.data,
+                                    ktens_noscale.data
+                                    * const_noscale.mass_conc_scale
+                                    * const_noscale.time_scale)
 
     def test_ktens_init_invalid_boundary_raises(self):
+        """Check KernelTensor.__init__ raises error for invalid boundary."""
         with self.assertRaises(ValueError):
-            ktens = KernelTensor(self.kernel, self.grid, boundary='nonsense')
+            KernelTensor(self.grid, boundary='nonsense', kernel=self.kernel)
 
-    def test_ktens_init_boundary(self):
+    def test_ktens_init_boundary_closed(self):
+        """Check KernelTensor.__init__ with boundary=closed."""
         nb = self.num_bins
         bb = self.grid.bin_bounds
-        ktens = KernelTensor(self.kernel, self.grid, boundary='closed')
-        self.assertEqual(ktens.boundary, 'closed')
-        idxs, nums, max_num = \
-            self.grid.construct_sparsity_structure(boundary='closed')
-        self.assertEqual(ktens.idxs.shape, idxs.shape)
-        for i in range(len(idxs.flat)):
-            self.assertEqual(ktens.idxs.flat[i], idxs.flat[i])
-        self.assertEqual(ktens.nums.shape, nums.shape)
-        for i in range(len(nums.flat)):
-            self.assertEqual(ktens.nums.flat[i], nums.flat[i])
-        self.assertEqual(ktens.max_num, max_num)
-        self.assertEqual(ktens.data.shape, (nb, nb, max_num))
-        lx1 = bb[5]
-        lx2 = bb[6]
-        ly1 = bb[5]
-        ly2 = bb[6]
-        lz1 = bb[5]
-        lz2 = np.inf
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[5,5,0], expected / ktens.scaling)
-        lx1 = bb[0]
-        lx2 = bb[1]
-        ly1 = bb[5]
-        ly2 = bb[6]
-        lz1 = bb[5]
-        lz2 = np.inf
-        expected = self.kernel.integrate_over_bins((lx1, lx2), (ly1, ly2),
-                                                   (lz1, lz2))
-        self.assertAlmostEqual(ktens.data[0,5,0], expected / ktens.scaling)
+        ktens = KernelTensor(self.grid, boundary='closed', kernel=self.kernel)
+        self.assertEqual(ktens.data.shape, (nb, nb, 2))
+        # Check the following two cases:
+        # 1. x and y are largest bin, output to largest bin.
+        # 2. y is largest bin, output to largest bin.
+        x_idxs = [5, 0]
+        y_idxs = [5, 5]
+        z_idxs = [5, 5]
+        for x_idx, y_idx, z_idx in zip(x_idxs, y_idxs, z_idxs):
+            lx_bound = bb[x_idx:x_idx+2]
+            ly_bound = bb[y_idx:y_idx+2]
+            if z_idx < nb-1:
+                lz_bound = bb[z_idx:z_idx+2]
+            else:
+                lz_bound = (bb[z_idx], np.inf)
+            k = z_idx - ktens.idxs[x_idx,y_idx]
+            expected = self.kernel.integrate_over_bins(lx_bound, ly_bound,
+                                                       lz_bound)
+            self.assertAlmostEqual(ktens.data[x_idx,y_idx,k],
+                                   expected * self.scaling)
 
-    def test_calc_rate(self):
+    def test_calc_rate_first_bin(self):
+        """Check KernelTensor.calc_rate for lowest bin."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ktens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -185,54 +156,77 @@ class TestKernelTensor(ArrayTestCase):
             for j in range(ktens.nums[idx,i]):
                 expected_bot -= ktens.data[idx,i,j] * f[idx] * f[i]
         expected_bot /= bw[idx]
+        self.assertAlmostEqual(dfdt[0], expected_bot, places=15)
+
+    def test_calc_rate_middle_bin(self):
+        """Check KernelTensor.calc_rate for one of the middle bins."""
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f)
+        self.assertEqual(f.shape, dfdt.shape)
         # Expected value in fourth bin.
         idx = 3
         expected_middle = 0
         for i in range(nb):
             for j in range(ktens.nums[idx,i]):
                 expected_middle -= ktens.data[idx,i,j] * f[idx] * f[i]
-        for i in range(nb):
             for j in range(nb):
                 k_idx = idx - ktens.idxs[i,j]
-                num = ktens.nums[i,j]
-                if 0 <= k_idx < num:
+                if 0 <= k_idx < ktens.nums[i,j]:
                     expected_middle += ktens.data[i,j,k_idx] * f[i] * f[j]
         expected_middle /= bw[idx]
+        self.assertAlmostEqual(dfdt[3], expected_middle, places=15)
+
+    def test_calc_rate_top_bins(self):
+        """Check KernelTensor.calc_rate for top and out-of-range bin."""
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f)
+        self.assertEqual(f.shape, dfdt.shape)
         # Expected value in top bin.
         idx = 5
         expected_top = 0
         for i in range(nb):
             for j in range(ktens.nums[idx,i]):
                 expected_top -= ktens.data[idx,i,j] * f[idx] * f[i]
-        for i in range(nb):
             for j in range(nb):
                 k_idx = idx - ktens.idxs[i,j]
-                num = ktens.nums[i,j]
-                if 0 <= k_idx < num:
+                if 0 <= k_idx < ktens.nums[i,j]:
                     expected_top += ktens.data[i,j,k_idx] * f[i] * f[j]
         expected_top /= bw[idx]
-        # Expected value in extra bin.
+        # Expected value in out-of-range bin.
         idx = 6
         expected_extra = 0
         for i in range(nb):
             for j in range(nb):
                 k_idx = idx - ktens.idxs[i,j]
-                num = ktens.nums[i,j]
-                if 0 <= k_idx < num:
+                if 0 <= k_idx < ktens.nums[i,j]:
                     expected_extra += ktens.data[i,j,k_idx] * f[i] * f[j]
-        self.assertAlmostEqual(dfdt[0], expected_bot, places=15)
-        self.assertAlmostEqual(dfdt[3], expected_middle, places=15)
         self.assertAlmostEqual(dfdt[5], expected_top, places=15)
         self.assertAlmostEqual(dfdt[6], expected_extra, places=15)
+
+    def test_calc_rate_conservation(self):
+        """Check KernelTensor.calc_rate conserves mass."""
+        nb = self.num_bins
+        bw = self.grid.bin_widths
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
+        f = np.linspace(1., nb+1, nb+1)
+        dfdt = ktens.calc_rate(f)
+        self.assertEqual(f.shape, dfdt.shape)
         mass_change = np.zeros((nb+1,))
         mass_change[:nb] = dfdt[:nb] * bw
         mass_change[-1] = dfdt[-1]
         self.assertAlmostEqual(np.sum(mass_change/mass_change.max()), 0.)
 
     def test_calc_rate_closed(self):
+        """Check KernelTensor.calc_rate with closed boundary."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ktens = KernelTensor(self.kernel, self.grid, boundary='closed')
+        ktens = KernelTensor(self.grid, boundary='closed', kernel=self.kernel)
         f = np.linspace(1., nb, nb)
         dfdt = ktens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -272,9 +266,10 @@ class TestKernelTensor(ArrayTestCase):
         mass_change = dfdt * bw
         self.assertAlmostEqual(np.sum(mass_change/mass_change.max()), 0.)
 
-    def test_calc_rate_valid_sizes(self):
+    def test_calc_rate_correct_sizes(self):
+        """Check that KernelTensor.calc_rate uses input vector size."""
         nb = self.num_bins
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(1., nb+2, nb+2)
         with self.assertRaises(ValueError):
             ktens.calc_rate(f)
@@ -288,66 +283,71 @@ class TestKernelTensor(ArrayTestCase):
             self.assertEqual(dfdt_1[i], dfdt_2[i])
 
     def test_calc_rate_no_closed_boundary_flux(self):
+        """Check calc_rate produces no out-of-range mass for closed boundary."""
         nb = self.num_bins
-        ktens = KernelTensor(self.kernel, self.grid, boundary='closed')
+        ktens = KernelTensor(self.grid, boundary='closed', kernel=self.kernel)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ktens.calc_rate(f)
         self.assertEqual(dfdt[-1], 0.)
 
-    def test_calc_rate_valid_shapes(self):
+    def test_calc_rate_correct_shapes(self):
+        """Check that KernelTensor.calc_rate produces correct output shapes."""
         nb = self.num_bins
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ktens.calc_rate(f)
+        # Row vector.
         f_row = np.reshape(f, (1, nb+1))
         dfdt_row = ktens.calc_rate(f_row)
-        self.assertEqual(dfdt_row.shape, f_row.shape)
-        for i in range(nb+1):
-            self.assertAlmostEqual(dfdt_row[0,i], dfdt[i], places=25)
+        self.assertArrayAlmostEqual(dfdt_row,
+                                    np.reshape(dfdt, f_row.shape),
+                                    places=25)
+        # Column vector
         f_col = np.reshape(f, (nb+1, 1))
         dfdt_col = ktens.calc_rate(f_col)
-        self.assertEqual(dfdt_col.shape, f_col.shape)
-        for i in range(nb+1):
-            self.assertAlmostEqual(dfdt_col[i,0], dfdt[i], places=25)
+        self.assertArrayAlmostEqual(dfdt_col,
+                                    np.reshape(dfdt, f_col.shape),
+                                    places=25)
         f = np.linspace(1., nb, nb)
         dfdt = ktens.calc_rate(f)
+        # Row vector, no out-of-range bin.
         f_row = np.reshape(f, (1, nb))
         dfdt_row = ktens.calc_rate(f_row)
-        self.assertEqual(dfdt_row.shape, f_row.shape)
-        for i in range(nb):
-            self.assertAlmostEqual(dfdt_row[0,i], dfdt[i], places=25)
+        self.assertArrayAlmostEqual(dfdt_row,
+                                    np.reshape(dfdt, f_row.shape),
+                                    places=25)
+        # Column vector, no out-of-range bin.
         f_col = np.reshape(f, (nb, 1))
         dfdt_col = ktens.calc_rate(f_col)
-        self.assertEqual(dfdt_col.shape, f_col.shape)
-        for i in range(nb):
-            self.assertAlmostEqual(dfdt_col[i,0], dfdt[i], places=25)
+        self.assertArrayAlmostEqual(dfdt_col,
+                                    np.reshape(dfdt, f_col.shape),
+                                    places=25)
 
     def test_calc_rate_force_out_flux(self):
+        """Check KernelTensor.calc_rate affected by out_flux=True."""
         nb = self.num_bins
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(1., nb+1, nb+1)
-        dfdt = ktens.calc_rate(f[:nb], out_flux=True)
+        actual = ktens.calc_rate(f[:nb], out_flux=True)
         expected = ktens.calc_rate(f[:nb+1])
-        self.assertEqual(len(dfdt), nb+1)
-        for i in range(nb+1):
-            self.assertEqual(dfdt[i], expected[i])
+        self.assertArrayEqual(actual, expected)
 
     def test_calc_rate_force_no_out_flux(self):
+        """Check KernelTensor.calc_rate is affected by out_flux=False."""
         nb = self.num_bins
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(1., nb+1, nb+1)
-        dfdt = ktens.calc_rate(f, out_flux=False)
+        actual = ktens.calc_rate(f, out_flux=False)
         expected = ktens.calc_rate(f[:nb])
-        self.assertEqual(len(dfdt), nb)
-        for i in range(nb):
-            self.assertEqual(dfdt[i], expected[i])
+        self.assertArrayEqual(actual, expected)
 
     def test_calc_rate_derivative(self):
+        """Check derivative output of calc_rate."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(2., nb+1, nb+1)
-        dfdt, rate_deriv = ktens.calc_rate(f, derivative=True)
+        _, rate_deriv = ktens.calc_rate(f, derivative=True)
         self.assertEqual(rate_deriv.shape, (nb+1, nb+1))
         # First column, perturbation in lowest bin.
         idx = 0
@@ -366,8 +366,7 @@ class TestKernelTensor(ArrayTestCase):
                 expected[i] -= this_rate
                 expected[ktens.idxs[i,idx] + j] += this_rate
         expected[:nb] /= bw
-        for i in range(nb+1):
-            self.assertAlmostEqual(rate_deriv[i,idx], expected[i], places=25)
+        self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
         # Last column, perturbation in highest bin.
         idx = 5
         expected = np.zeros((nb+1,))
@@ -385,22 +384,18 @@ class TestKernelTensor(ArrayTestCase):
                 expected[i] -= this_rate
                 expected[ktens.idxs[i,idx] + j] += this_rate
         expected[:nb] /= bw
-        for i in range(nb+1):
-            self.assertAlmostEqual(rate_deriv[i,idx], expected[i], places=25)
+        self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
         # Effect of perturbations to bottom bin should be 0.
-        for i in range(nb+1):
-            self.assertEqual(rate_deriv[i,6], 0.)
+        self.assertArrayEqual(rate_deriv[:,6], np.zeros((nb+1,)))
 
     def test_calc_rate_derivative_no_out_flux(self):
+        """Check derivative output of calc_rate with out_flux=False."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
-        ktens = KernelTensor(self.kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=self.kernel)
         f = np.linspace(2., nb+1, nb+1)
         _, rate_deriv = ktens.calc_rate(f, derivative=True, out_flux=False)
         self.assertEqual(rate_deriv.shape, (nb, nb))
         _, outflux_rate_deriv = ktens.calc_rate(f, derivative=True)
-        for i in range(nb):
-            for j in range(nb):
-                self.assertAlmostEqual(rate_deriv[i,j],
-                                       outflux_rate_deriv[i,j],
-                                       places=25)
+        self.assertArrayAlmostEqual(rate_deriv,
+                                    outflux_rate_deriv[:nb, :nb],
+                                    places=25)

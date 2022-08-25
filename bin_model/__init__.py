@@ -1461,14 +1461,13 @@ class NetcdfFile:
         """Write a KernelTensor object to a netCDF file."""
         ktens.to_netcdf(self)
 
-    def read_kernel_tensor(self, kernel, grid):
+    def read_kernel_tensor(self, grid):
         """Read a KernelTensor object from a netCDF file.
 
         Arguments:
-        kernel - Kernel object to use in constructing the KernelTensor.
         grid - MassGrid object to use in constructing the MassGrid.
         """
-        return KernelTensor.from_netcdf(self, kernel, grid)
+        return KernelTensor.from_netcdf(self, grid)
 
     def write_cgk(self, ktens):
         """Write constants, grid, kernel, and tensor data to netCDF file.
@@ -1496,7 +1495,7 @@ class NetcdfFile:
         constants = self.read_constants()
         kernel = self.read_kernel(constants)
         grid = self.read_mass_grid(constants)
-        ktens = self.read_kernel_tensor(kernel, grid)
+        ktens = self.read_kernel_tensor(grid)
         return constants, kernel, grid, ktens
 
     def write_descriptor(self, desc):

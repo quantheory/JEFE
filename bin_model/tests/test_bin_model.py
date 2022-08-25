@@ -1454,7 +1454,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -1472,7 +1472,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -1490,7 +1490,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -1507,7 +1507,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -1525,7 +1525,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -1556,7 +1556,7 @@ class TestModelState(unittest.TestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
         desc = ModelStateDescriptor(self.constants,
@@ -1692,7 +1692,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -1722,7 +1722,7 @@ class TestModelState(unittest.TestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
         desc = ModelStateDescriptor(self.constants,
@@ -1822,7 +1822,7 @@ class TestModelState(unittest.TestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
         nvar = 3
@@ -1918,7 +1918,7 @@ class TestModelState(unittest.TestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         dsd_deriv_names = ['lambda']
         dsd_deriv_scales = [self.constants.std_diameter]
         nvar = 3
@@ -2023,7 +2023,7 @@ class TestModelState(unittest.TestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(kernel, self.grid)
+        ktens = KernelTensor(self.grid, kernel=kernel)
         ddn = 2
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
@@ -2108,7 +2108,7 @@ class TestRK45Integrator(unittest.TestCase):
                                       d_max=1.e-3,
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
-        self.ktens = KernelTensor(self.kernel, self.grid)
+        self.ktens = KernelTensor(self.grid, kernel=self.kernel)
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
         self.desc = ModelStateDescriptor(self.constants,
@@ -2358,7 +2358,7 @@ class TestExperiment(unittest.TestCase):
                                       d_max=1.e-3,
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
-        self.ktens = KernelTensor(self.kernel, self.grid)
+        self.ktens = KernelTensor(self.grid, kernel=self.kernel)
         ddn = 2
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
@@ -2585,7 +2585,7 @@ class TestNetcdfFile(unittest.TestCase):
                                       d_max=1.e-3,
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
-        self.ktens = KernelTensor(self.kernel, self.grid)
+        self.ktens = KernelTensor(self.grid, kernel=self.kernel)
         dsd_deriv_names = ['lambda', 'nu']
         dsd_deriv_scales = [self.constants.std_diameter, 1.]
         nvar = 3
@@ -2829,7 +2829,7 @@ class TestNetcdfFile(unittest.TestCase):
         ktens = self.ktens
         self.NetcdfFile.write_mass_grid(self.grid)
         self.NetcdfFile.write_kernel_tensor(ktens)
-        ktens2 = self.NetcdfFile.read_kernel_tensor(self.kernel, self.grid)
+        ktens2 = self.NetcdfFile.read_kernel_tensor(self.grid)
         self.assertEqual(ktens2.boundary, ktens.boundary)
         self.assertEqual(ktens2.data.shape, ktens.data.shape)
         scale = ktens.data.max()
