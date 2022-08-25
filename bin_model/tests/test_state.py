@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-"""Test descriptor module."""
+"""Test state module."""
 
 import numpy as np
 import scipy.linalg as la
