@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-"""Moment transforms used for JEFE"""
+"""Moment transforms used for JEFE."""
 
 from abc import ABC, abstractmethod
 
