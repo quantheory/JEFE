@@ -56,7 +56,7 @@ class Transform(ABC):
             return LogTransform()
         if type_str == "QuadToLog":
             return QuadToLogTransform(params[0])
-        assert False, "transform type string not recognized"
+        raise ValueError("transform type string not recognized")
 
 
 class IdentityTransform(Transform):

@@ -2795,7 +2795,7 @@ class TestNetcdfFile(unittest.TestCase):
         ttsl = self.NetcdfFile.read_dimension("transform_type_str_len")
         self.NetcdfFile.nc['perturb_transform_types'][0,:] = \
             nc4.stringtochar(np.array(['nonsense'], 'S{}'.format(ttsl)))
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.read_descriptor(const, grid)
 
     def test_simple_desc_io(self):
