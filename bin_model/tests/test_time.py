@@ -18,7 +18,7 @@ import numpy as np
 import scipy.linalg as la
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, ModelStateDescriptor, ModelState
+    KernelTensor, LogTransform, DerivativeVar, ModelStateDescriptor, ModelState
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -57,12 +57,11 @@ class TestRK45Integrator(ArrayTestCase):
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
         self.ktens = KernelTensor(self.grid, kernel=self.kernel)
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         self.desc = ModelStateDescriptor(self.constants,
                                          self.grid,
-                                         dsd_deriv_names=dsd_deriv_names,
-                                         dsd_deriv_scales=dsd_deriv_scales)
+                                         deriv_vars=deriv_vars)
         nu = 5.
         lam = nu / 1.e-4
         dsd = gamma_dist_d(self.grid, lam, nu)
@@ -71,9 +70,8 @@ class TestRK45Integrator(ArrayTestCase):
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
         self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
         self.state = ModelState(self.desc, self.raw)
-        ddn = 1
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = [self.constants.std_diameter]
+        dvn = 1
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
         pn = 3
         wv0 = self.grid.moment_weight_vector(0)
         wv6 = self.grid.moment_weight_vector(6)
@@ -88,16 +86,14 @@ class TestRK45Integrator(ArrayTestCase):
         perturbation_rate = error_rate**2 * np.eye(pn)
         correction_time = 5.
         self.pc_desc = ModelStateDescriptor(self.constants,
-                                     self.grid,
-                                     dsd_deriv_names=dsd_deriv_names,
-                                     dsd_deriv_scales=dsd_deriv_scales,
+                                            self.grid, deriv_vars=deriv_vars,
                                      perturbed_variables=perturbed_variables,
                                      perturbation_rate=perturbation_rate,
                                      correction_time=correction_time)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(self.grid, lam, nu)
-        dsd_deriv = np.zeros((ddn, nb))
+        dsd_deriv = np.zeros((dvn, nb))
         dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \

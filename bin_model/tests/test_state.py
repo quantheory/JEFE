@@ -19,7 +19,7 @@ import scipy.linalg as la
 from scipy.special import gammainc
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, ModelStateDescriptor
+    KernelTensor, LogTransform, DerivativeVar, ModelStateDescriptor
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -236,10 +236,10 @@ class TestModelState(ArrayTestCase):
 
     def test_dsd_deriv_all(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -253,12 +253,10 @@ class TestModelState(ArrayTestCase):
 
     def test_dsd_deriv_all_scaling(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -273,10 +271,10 @@ class TestModelState(ArrayTestCase):
 
     def test_dsd_deriv_individual(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -294,10 +292,10 @@ class TestModelState(ArrayTestCase):
 
     def test_dsd_deriv_individual_raises_if_not_found(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -309,12 +307,10 @@ class TestModelState(ArrayTestCase):
 
     def test_dsd_deriv_scaling(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -332,10 +328,10 @@ class TestModelState(ArrayTestCase):
 
     def test_fallout_deriv_all(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -352,12 +348,10 @@ class TestModelState(ArrayTestCase):
 
     def test_fallout_deriv_all_scaling(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -374,10 +368,10 @@ class TestModelState(ArrayTestCase):
 
     def test_fallout_deriv_individual(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -387,18 +381,16 @@ class TestModelState(ArrayTestCase):
                                  fallout_deriv=fallout_deriv)
         state = ModelState(desc, raw)
         actual_fallout_deriv = state.fallout_deriv('lambda')
-        self.assertAlmostEqual(actual_fallout_deriv[0], fallout_deriv[0])
+        self.assertAlmostEqual(actual_fallout_deriv, fallout_deriv[0])
         actual_fallout_deriv = state.fallout_deriv('nu')
-        self.assertAlmostEqual(actual_fallout_deriv[1], fallout_deriv[1])
+        self.assertAlmostEqual(actual_fallout_deriv, fallout_deriv[1])
 
     def test_fallout_deriv_individual_scaling(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -408,9 +400,9 @@ class TestModelState(ArrayTestCase):
                                  fallout_deriv=fallout_deriv)
         state = ModelState(desc, raw)
         actual_fallout_deriv = state.fallout_deriv('lambda')
-        self.assertAlmostEqual(actual_fallout_deriv[0], fallout_deriv[0])
+        self.assertAlmostEqual(actual_fallout_deriv, fallout_deriv[0])
         actual_fallout_deriv = state.fallout_deriv('nu')
-        self.assertAlmostEqual(actual_fallout_deriv[1], fallout_deriv[1])
+        self.assertAlmostEqual(actual_fallout_deriv, fallout_deriv[1])
 
     def test_dsd_time_deriv_raw(self):
         grid = self.grid
@@ -520,12 +512,11 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ktens = KernelTensor(self.grid, kernel=kernel)
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+                                    deriv_vars=deriv_vars)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -545,9 +536,11 @@ class TestModelState(ArrayTestCase):
         dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
         for i in range(2):
-            deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
+            deriv_plus_fallout[:nb] = \
+                deriv_vars[i].si_to_nondimensional(dsd_deriv[i,:]) \
                 / dsd_scale
-            deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
+            deriv_plus_fallout[nb] = \
+                deriv_vars[i].si_to_nondimensional(fallout_deriv[i]) \
                 / dsd_scale
             expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
                 derivative @ deriv_plus_fallout
@@ -569,10 +562,10 @@ class TestModelState(ArrayTestCase):
         const = self.constants
         weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -595,10 +588,10 @@ class TestModelState(ArrayTestCase):
         const = self.constants
         weight_vector = self.grid.moment_weight_vector(3, cloud_only=True)
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+                                    deriv_vars=deriv_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -686,12 +679,11 @@ class TestModelState(ArrayTestCase):
         desc = self.desc
         kernel = LongKernel(self.constants)
         ktens = KernelTensor(self.grid, kernel=kernel)
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+                                    deriv_vars=deriv_vars)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -728,7 +720,8 @@ class TestModelState(ArrayTestCase):
             + cloud_f_deriv[nb,:]
         auto_deriv *= const.mass_conc_scale / const.time_scale
         auto_deriv[0] /= const.time_scale
-        auto_deriv[1:] *= desc.dsd_deriv_scales
+        for i, dvar in enumerate(deriv_vars):
+            auto_deriv[i+1] = dvar.nondimensional_to_si(auto_deriv[i+1])
         for i in range(3):
             self.assertAlmostEqual(actual_deriv[0,i] / auto_deriv[i], 1.)
         total_inter, total_deriv = ktens.calc_rate(dsd_raw, out_flux=True,
@@ -741,14 +734,15 @@ class TestModelState(ArrayTestCase):
         accr_deriv = -cloud_weight_vector @ no_csc_or_auto_deriv[:nb,:]
         accr_deriv *= const.mass_conc_scale / const.time_scale
         accr_deriv[0] /= const.time_scale
-        accr_deriv[1:] *= desc.dsd_deriv_scales
+        for i, dvar in enumerate(deriv_vars):
+            accr_deriv[i+1] = dvar.nondimensional_to_si(accr_deriv[i+1])
         for i in range(3):
             self.assertAlmostEqual(actual_deriv[1,i] / accr_deriv[i], 1.)
 
     def test_perturb_cov(self):
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -763,7 +757,7 @@ class TestModelState(ArrayTestCase):
         perturbation_rate = error_rate**2 * np.eye(nvar)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
+                                    deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         dsd = np.linspace(0., nb-1, nb)
@@ -786,8 +780,8 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ktens = KernelTensor(self.grid, kernel=kernel)
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -802,8 +796,7 @@ class TestModelState(ArrayTestCase):
         perturbation_rate = error_rate**2 * np.eye(nvar)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         nu = 5.
@@ -829,9 +822,11 @@ class TestModelState(ArrayTestCase):
         dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
         for i in range(2):
-            deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
+            deriv_plus_fallout[:nb] = \
+                deriv_vars[i].si_to_nondimensional(dsd_deriv[i,:]) \
                 / dsd_scale
-            deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
+            deriv_plus_fallout[nb] = \
+                deriv_vars[i].si_to_nondimensional(fallout_deriv[i]) \
                 / dsd_scale
             expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
                 rate_deriv @ deriv_plus_fallout
@@ -882,8 +877,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ktens = KernelTensor(self.grid, kernel=kernel)
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = [self.constants.std_diameter]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -899,8 +893,7 @@ class TestModelState(ArrayTestCase):
         correction_time = 5.
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time)
@@ -927,9 +920,11 @@ class TestModelState(ArrayTestCase):
         dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
         for i in range(1):
-            deriv_plus_fallout[:nb] = dsd_deriv[i,:] / dsd_deriv_scales[i] \
+            deriv_plus_fallout[:nb] = \
+                deriv_vars[i].si_to_nondimensional(dsd_deriv[i,:]) \
                 / dsd_scale
-            deriv_plus_fallout[nb] = fallout_deriv[i] / dsd_deriv_scales[i] \
+            deriv_plus_fallout[nb] = \
+                deriv_vars[i].si_to_nondimensional(fallout_deriv[i]) \
                 / dsd_scale
             expected[(i+1)*(nb+1):(i+2)*(nb+1)] = \
                 rate_deriv @ deriv_plus_fallout
@@ -987,9 +982,9 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ktens = KernelTensor(self.grid, kernel=kernel)
-        ddn = 2
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        dvn = 2
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         pn = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -1004,14 +999,13 @@ class TestModelState(ArrayTestCase):
         perturbation_rate = error_rate**2 * np.eye(pn)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
-        dsd_deriv = np.zeros((ddn, nb))
+        dsd_deriv = np.zeros((dvn, nb))
         dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
@@ -1026,7 +1020,7 @@ class TestModelState(ArrayTestCase):
         ddsddt_raw = state.dsd_time_deriv_raw([ktens])[:nb]
         actual = state.zeta_cov_raw(ddsddt_raw)
         lfs = np.zeros((pn,))
-        lf_jac = np.zeros((pn, ddn+1))
+        lf_jac = np.zeros((pn, dvn+1))
         for i in range(pn):
             wv = desc.perturb_wvs[i]
             lfs[i], lf_jac[i,:] = state.linear_func_raw(wv, derivative=True,

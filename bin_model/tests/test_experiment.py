@@ -18,7 +18,8 @@ import numpy as np
 import scipy.linalg as la
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, ModelStateDescriptor, ModelState, RK45Integrator
+    KernelTensor, LogTransform, DerivativeVar, ModelStateDescriptor, \
+    ModelState, RK45Integrator
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -45,9 +46,9 @@ class TestExperiment(ArrayTestCase):
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
         self.ktens = KernelTensor(self.grid, kernel=self.kernel)
-        ddn = 2
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        dvn = 2
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         pn = 3
         wv0 = self.grid.moment_weight_vector(0)
         wv6 = self.grid.moment_weight_vector(6)
@@ -63,15 +64,14 @@ class TestExperiment(ArrayTestCase):
         correction_time = 5.
         self.desc = ModelStateDescriptor(self.constants,
                                      self.grid,
-                                     dsd_deriv_names=dsd_deriv_names,
-                                     dsd_deriv_scales=dsd_deriv_scales,
+                                     deriv_vars=deriv_vars,
                                      perturbed_variables=perturbed_variables,
                                      perturbation_rate=perturbation_rate,
                                      correction_time=correction_time)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(self.grid, lam, nu)
-        dsd_deriv = np.zeros((ddn, nb))
+        dsd_deriv = np.zeros((dvn, nb))
         dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
@@ -85,7 +85,7 @@ class TestExperiment(ArrayTestCase):
         nu2 = 0.
         lam = nu / 5.e-5
         dsd = gamma_dist_d(self.grid, lam, nu)
-        dsd_deriv = np.zeros((ddn, nb))
+        dsd_deriv = np.zeros((dvn, nb))
         dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
         dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
         self.raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
@@ -114,7 +114,7 @@ class TestExperiment(ArrayTestCase):
         for i in range(ntimes):
             self.assertEqual(exp.states[i].dsd_moment(0),
                              states[i].dsd_moment(0))
-        self.assertEqual(exp.desc.dsd_deriv_num, 2)
+        self.assertEqual(exp.desc.deriv_var_num, 2)
         self.assertEqual(exp.num_time_steps, ntimes)
 
     def test_init_with_ddsddt(self):
@@ -143,12 +143,12 @@ class TestExperiment(ArrayTestCase):
         raws[0,:] = self.state.raw
         raws[1,:] = self.state2.raw
         states = [self.state, self.state2]
-        ddn = self.desc.dsd_deriv_num
-        zeta_cov = np.zeros((ntimes, ddn, ddn))
+        dvn = self.desc.deriv_var_num
+        zeta_cov = np.zeros((ntimes, dvn, dvn))
         for i in range(ntimes):
-            zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + ddn**2-1),
-                                                ddn**2),
-                                    (ddn, ddn))
+            zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + dvn**2-1),
+                                                dvn**2),
+                                    (dvn, dvn))
         exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
                          zeta_cov=zeta_cov)
         self.assertEqual(exp.zeta_cov.shape, zeta_cov.shape)
@@ -168,7 +168,7 @@ class TestExperiment(ArrayTestCase):
         expected_mom = np.zeros((2,2))
         expected_cov = np.zeros((2,2,2))
         for i in range(2):
-            deriv = np.zeros((2, self.desc.dsd_deriv_num+1))
+            deriv = np.zeros((2, self.desc.deriv_var_num+1))
             for j in range(2):
                 expected_mom[i,j], deriv[j,:] = \
                     exp.states[i].linear_func_raw(wvs[j], derivative=True,
@@ -213,7 +213,7 @@ class TestExperiment(ArrayTestCase):
         mom, cov = exp.get_moments_and_covariances(wvs, times=[1])
         expected_mom = np.zeros((1,2))
         expected_cov = np.zeros((1,2,2))
-        deriv = np.zeros((2, self.desc.dsd_deriv_num+1))
+        deriv = np.zeros((2, self.desc.deriv_var_num+1))
         for j in range(2):
             expected_mom[0,j], deriv[j,:] = \
                 exp.states[1].linear_func_raw(wvs[j], derivative=True,
@@ -228,7 +228,7 @@ class TestExperiment(ArrayTestCase):
 
     def test_get_moments_and_covariances_raises_without_data(self):
         nb = self.grid.num_bins
-        ddn = self.desc.dsd_deriv_num
+        dvn = self.desc.deriv_var_num
         times = self.times
         ntimes = len(times)
         raws = np.zeros((ntimes, len(self.state.raw)))
@@ -238,11 +238,11 @@ class TestExperiment(ArrayTestCase):
         ddsddt = np.zeros((ntimes, nb))
         for i in range(ntimes):
             ddsddt = np.linspace(-nb+i, -i, nb)
-        zeta_cov = np.zeros((ntimes, ddn, ddn))
+        zeta_cov = np.zeros((ntimes, dvn, dvn))
         for i in range(ntimes):
-            zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + ddn**2-1),
-                                                ddn**2),
-                                    (ddn, ddn))
+            zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + dvn**2-1),
+                                                dvn**2),
+                                    (dvn, dvn))
         exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
                          ddsddt=ddsddt)
         wvs = self.grid.moment_weight_vector(6)

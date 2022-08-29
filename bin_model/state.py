@@ -64,16 +64,16 @@ class ModelState:
                               the variable named by this string.
 
         If var_name is not provided, a 2D array of size
-        `(dsd_deriv_num, num_bins)` is returned, with all derivatives in it.
+        `(deriv_var_num, num_bins)` is returned, with all derivatives in it.
         If var_name is provided, a 1D array of size num_bins is returned.
         """
         dsd_deriv = self.desc.dsd_deriv_raw(self.raw, var_name).copy()
         if var_name is None:
-            for i in range(self.desc.dsd_deriv_num):
-                dsd_deriv[i,:] *= self.desc.dsd_deriv_scales[i]
+            for i, dvar in enumerate(self.desc.deriv_vars):
+                dsd_deriv[i,:] = dvar.nondimensional_to_si(dsd_deriv[i,:])
         else:
-            idx = self.desc.dsd_deriv_names.index(var_name)
-            dsd_deriv *= self.desc.dsd_deriv_scales[idx]
+            dvar = self.desc.find_deriv_var(var_name)
+            dsd_deriv = dvar.nondimensional_to_si(dsd_deriv)
         dsd_deriv *= self.constants.mass_conc_scale
         return dsd_deriv
 
@@ -84,20 +84,20 @@ class ModelState:
         var_name (optional) - Return information for derivative with respect to
                               the variable named by this string.
 
-        If var_name is not provided, a 1D array of length dsd_deriv_num is
+        If var_name is not provided, a 1D array of length deriv_var_num is
         returned, with all derivatives in it. If var_name is provided, a
         single scalar is returned for that derivative.
         """
         if var_name is None:
             output = self.desc.fallout_deriv_raw(self.raw)
-            for i in range(self.desc.dsd_deriv_num):
-                output[i] *= self.desc.dsd_deriv_scales[i]
+            for i, dvar in enumerate(self.desc.deriv_vars):
+                output[i] = dvar.nondimensional_to_si(output[i])
             return output * self.constants.mass_conc_scale
         else:
-            idx = self.desc.dsd_deriv_names.index(var_name)
-            return self.desc.fallout_deriv_raw(self.raw) \
-                * self.constants.mass_conc_scale \
-                * self.desc.dsd_deriv_scales[idx]
+            dvar = self.desc.find_deriv_var(var_name)
+            fallout_deriv_raw = self.desc.fallout_deriv_raw(self.raw, var_name)
+            return dvar.nondimensional_to_si(fallout_deriv_raw) \
+                * self.constants.mass_conc_scale
 
     def perturb_cov(self):
         """Return perturbation covariance matrix."""
@@ -131,7 +131,7 @@ class ModelState:
         """
         desc = self.desc
         nb = self.mass_grid.num_bins
-        ddn = desc.dsd_deriv_num
+        dvn = desc.deriv_var_num
         pn = desc.perturb_num
         dfdt = np.zeros((len(self.raw),))
         dsd_raw = desc.dsd_raw(self.raw)
@@ -141,11 +141,11 @@ class ModelState:
         if pn > 0:
             double_time_deriv = np.zeros((nb+1))
         for pt in proc_tens:
-            if ddn > 0:
+            if dvn > 0:
                 rate, derivative = pt.calc_rate(dsd_raw, out_flux=True,
                                                 derivative=True)
                 dfdt[didx:didx+dnum] += rate
-                for i in range(ddn):
+                for i in range(dvn):
                     dfdt[dridxs[i]:dridxs[i]+drnum] += \
                         derivative @ dsd_deriv_raw[i,:]
                 if pn > 0:
@@ -154,14 +154,14 @@ class ModelState:
                 dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
         if pn > 0:
             ddsddt = desc.dsd_raw(dfdt)
-            ddsddt_deriv = np.zeros((ddn+1,nb))
+            ddsddt_deriv = np.zeros((dvn+1,nb))
             ddsddt_deriv[0,:] = double_time_deriv[:nb]
             ddsddt_deriv[1:,:] = desc.dsd_deriv_raw(dfdt)
             perturb_cov_raw = desc.perturb_cov_raw(self.raw)
             lfs = np.zeros((pn,))
-            lf_jac = np.zeros((pn, ddn+1))
+            lf_jac = np.zeros((pn, dvn+1))
             lf_rates = np.zeros((pn,))
-            lf_rate_jac = np.zeros((pn, ddn+1))
+            lf_rate_jac = np.zeros((pn, dvn+1))
             for i in range(pn):
                 wv = self.desc.perturb_wvs[i]
                 lfs[i], lf_jac[i,:] = \
@@ -242,9 +242,9 @@ class ModelState:
         dsd_raw = self.desc.dsd_raw(self.raw)
         nb = self.mass_grid.num_bins
         if derivative:
-            ddn = self.desc.dsd_deriv_num
+            dvn = self.desc.deriv_var_num
             offset = 1 if dfdt is not None else 0
-            dsd_deriv_raw = np.zeros((ddn+offset, nb))
+            dsd_deriv_raw = np.zeros((dvn+offset, nb))
             if dfdt is not None:
                 dsd_deriv_raw[0,:] = dfdt
             dsd_deriv_raw[offset:,:] = self.desc.dsd_deriv_raw(self.raw)
@@ -271,8 +271,8 @@ class ModelState:
         variables for which the DSD derivative is provided.
 
         If dfdt_deriv is not None, it should be an array of shape
-            (ddn, num_bins)
-        where ddn is the number of derivatives that will be returned in the
+            (dvn, num_bins)
+        where dvn is the number of derivatives that will be returned in the
         second argument.
         """
         if dfdt_deriv is None:
@@ -288,10 +288,10 @@ class ModelState:
                  of dsd_time_deriv_raw.
         """
         desc = self.desc
-        ddn = desc.dsd_deriv_num
+        dvn = desc.deriv_var_num
         pn = desc.perturb_num
         lfs = np.zeros((pn,))
-        lf_jac = np.zeros((pn, ddn+1))
+        lf_jac = np.zeros((pn, dvn+1))
         for i in range(pn):
             wv = desc.perturb_wvs[i,:]
             lfs[i], lf_jac[i,:] = self.linear_func_raw(wv, derivative=True,
@@ -300,7 +300,7 @@ class ModelState:
                                  for i in range(pn)])
         v_to_zeta = la.pinv(transform_mat @ lf_jac)
         # We are assuming here that perturb_cov does not need the "correction"
-        # for pn > ddn + 1.
+        # for pn > dvn + 1.
         perturb_cov_raw = desc.perturb_cov_raw(self.raw)
         return v_to_zeta @ perturb_cov_raw @ v_to_zeta.T
 
@@ -333,8 +333,8 @@ class ModelState:
         if derivative:
             save_deriv = total_inter[1]
             total_inter = total_inter[0]
-            ddn = self.desc.dsd_deriv_num
-            dsd_deriv_raw = np.zeros((ddn+1, nb+1))
+            dvn = self.desc.deriv_var_num
+            dsd_deriv_raw = np.zeros((dvn+1, nb+1))
             dsd_deriv_raw[0,:] = total_inter
             dsd_deriv_raw[1:,:] = self.desc.dsd_deriv_raw(self.raw,
                                                           with_fallout=True)
@@ -358,15 +358,16 @@ class ModelState:
         accr *= rate_scale
         rates = np.array([auto, accr])
         if derivative:
-            rate_deriv = np.zeros((2, ddn+1))
+            rate_deriv = np.zeros((2, dvn+1))
             rate_deriv[0,:] = (m3_vector * rain_vector) @ cloud_deriv[:nb,:] \
                 + cloud_deriv[nb,:]
             no_soa_deriv = total_deriv - cloud_deriv
             rate_deriv[1,:] = -(m3_vector * cloud_vector) @ no_soa_deriv[:nb,:]
             rate_deriv *= rate_scale
             rate_deriv[:,0] /= self.constants.time_scale
-            for i in range(ddn):
-                rate_deriv[:,1+i] *= self.desc.dsd_deriv_scales[i]
+            for i in range(dvn):
+                dvar = self.desc.deriv_vars[i]
+                rate_deriv[:,1+i] = dvar.nondimensional_to_si(rate_deriv[:,1+i])
             return rates, rate_deriv
         else:
             return rates

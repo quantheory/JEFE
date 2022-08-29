@@ -19,6 +19,37 @@ import scipy.linalg as la
 
 from bin_model.transform import Transform
 
+class DerivativeVar:
+    """
+    Describe a variable that we track the DSD derivative with respect to.
+
+    Initialization arguments:
+    name - Variable name.
+    scale - Used for nondimensionalization of derivatives.
+    """
+
+    name_str_len = 64
+    """Maximum length of derivative variable name strings on file."""
+
+    def __init__(self, name, scale=1.):
+        if len(name) > self.name_str_len:
+            raise ValueError(f"derivative variable name too long: {name}")
+        self.name = name
+        self.scale = scale
+
+    def matches(self, name):
+        """Check whether input name matches the name of this variable."""
+        return name == self.name
+
+    def si_to_nondimensional(self, derivative):
+        """Convert SI unit derivative to nondimensional representation."""
+        return derivative * self.scale
+
+    def nondimensional_to_si(self, derivative):
+        """Convert unitless derivative to SI units."""
+        return derivative / self.scale
+
+
 class ModelStateDescriptor:
     """
     Describe the state variables contained in a ModelState.
@@ -26,12 +57,9 @@ class ModelStateDescriptor:
     Initialization arguments:
     constants - A ModelConstants object.
     mass_grid - A MassGrid object defining the bins.
-    dsd_deriv_names (optional) - List of strings naming variables with respect
-                                 to which DSD derivatives are prognosed.
-    dsd_deriv_scales (optional) - List of scales for the derivatives of the
-                                  named variable. These scales will be applied
-                                  in addition to mass_conc_scale. They default
-                                  to 1.
+    deriv_vars (optional) - List of DerivativeVars describing variables with
+                            respect to which the state derivatives are
+                            prognosed.
     perturbed_variables (optional) - A list of tuples, with each tuple
         containing a weight vector, a transform, and a scale, in that order.
     perturbation_rate (optional) - A covariance matrix representing the error
@@ -43,34 +71,24 @@ class ModelStateDescriptor:
                               for testing and I/O utility code.
     """
 
-    dsd_deriv_name_str_len = 64
-    """Length of dsd derivative variable name strings on file."""
-
     def __init__(self, constants, mass_grid,
-                 dsd_deriv_names=None, dsd_deriv_scales=None,
+                 deriv_vars=None,
                  perturbed_variables=None, perturbation_rate=None,
                  correction_time=None, scale_inputs=None):
         if scale_inputs is None:
             scale_inputs = True
         self.constants = constants
         self.mass_grid = mass_grid
-        if dsd_deriv_names is not None:
-            self.dsd_deriv_num = len(dsd_deriv_names)
-            assert len(set(dsd_deriv_names)) == self.dsd_deriv_num, \
-                "duplicate derivatives found in list"
-            self.dsd_deriv_names = dsd_deriv_names
-            if dsd_deriv_scales is None:
-                dsd_deriv_scales = np.ones((self.dsd_deriv_num,))
-            assert len(dsd_deriv_scales) == self.dsd_deriv_num, \
-                "dsd_deriv_scales length does not match dsd_deriv_names"
-            # Convert to array to allow user to specify a list here...
-            self.dsd_deriv_scales = np.array(dsd_deriv_scales)
+        if deriv_vars is not None:
+            self.deriv_var_num = len(deriv_vars)
+            num_unique_names = len(set(dvar.name for dvar in deriv_vars))
+            if num_unique_names != self.deriv_var_num:
+                raise ValueError("duplicate derivative variable names in state"
+                                 " descriptor")
+            self.deriv_vars = deriv_vars
         else:
-            assert dsd_deriv_scales is None, \
-                "cannot specify dsd_deriv_scales without dsd_deriv_names"
-            self.dsd_deriv_num = 0
-            self.dsd_deriv_names = []
-            self.dsd_deriv_scales = np.zeros((0,))
+            self.deriv_var_num = 0
+            self.deriv_vars = []
         if perturbed_variables is not None:
             pn = len(perturbed_variables)
             nb = mass_grid.num_bins
@@ -97,9 +115,9 @@ class ModelStateDescriptor:
                 if scale_inputs:
                     self.correction_time /= constants.time_scale
             else:
-                assert pn == self.dsd_deriv_num + 1, \
+                assert pn == self.deriv_var_num + 1, \
                     "must specify correction time unless perturb_num is " \
-                    "equal to dsd_deriv_num+1"
+                    "equal to deriv_var_num+1"
                 self.correction_time = None
         else:
             assert perturbation_rate is None, \
@@ -113,6 +131,23 @@ class ModelStateDescriptor:
         idx, num = self.perturb_chol_loc()
         return idx + num
 
+    def find_deriv_var_index(self, name):
+        """Return index of derivative variable corresponding to the given name.
+
+        This function returns the index of the variable in self.deriv_vars (i.e.
+        0 for the first variable, 1 for the second...), not information about
+        the location of the variable in state data.
+        """
+        for i, dvar in enumerate(self.deriv_vars):
+            if dvar.matches(name):
+                return i
+        raise ValueError(f"variable '{name}' is not a derivative variable"
+                         " listed in the state descriptor")
+
+    def find_deriv_var(self, name):
+        """Return derivative variable corresponding to the given name."""
+        return self.deriv_vars[self.find_deriv_var_index(name)]
+
     def construct_raw(self, dsd, fallout=None, dsd_deriv=None,
                       fallout_deriv=None, perturb_cov=None):
         """Construct raw state vector from individual variables.
@@ -121,7 +156,7 @@ class ModelStateDescriptor:
         dsd - Drop size distribution.
         fallout (optional) - Amount of third moment that has fallen out of the
                              model. If not specified, defaults to zero.
-        dsd_deriv - DSD derivatives. Mandatory if dsd_deriv_num is not zero.
+        dsd_deriv - DSD derivatives. Mandatory if deriv_var_num is not zero.
         fallout_deriv - Fallout derivatives. If not specified, defaults to
                         zero.
         perturb_cov - Covariance matrix for Gaussian perturbation. If not
@@ -131,7 +166,7 @@ class ModelStateDescriptor:
         """
         raw = np.zeros((self.state_len(),))
         nb = self.mass_grid.num_bins
-        ddn = self.dsd_deriv_num
+        dvn = self.deriv_var_num
         pn = self.perturb_num
         mc_scale = self.constants.mass_conc_scale
         assert len(dsd) == nb, "dsd of wrong size for this descriptor's grid"
@@ -140,22 +175,22 @@ class ModelStateDescriptor:
         if fallout is None:
             fallout = 0.
         raw[self.fallout_loc()] = fallout / mc_scale
-        if ddn > 0:
+        if dvn > 0:
             assert dsd_deriv is not None, \
                 "dsd_deriv input is required, but missing"
-            assert (dsd_deriv.shape == (ddn, nb)), \
+            assert (dsd_deriv.shape == (dvn, nb)), \
                 "dsd_deriv input is the wrong shape"
             if fallout_deriv is None:
-                fallout_deriv = np.zeros((ddn,))
-            assert len(fallout_deriv) == ddn, \
+                fallout_deriv = np.zeros((dvn,))
+            assert len(fallout_deriv) == dvn, \
                 "fallout_deriv input is wrong length"
-            for i in range(ddn):
-                idx, num = self.dsd_deriv_loc(self.dsd_deriv_names[i])
-                raw[idx:idx+num] = dsd_deriv[i,:] / self.dsd_deriv_scales[i] \
-                                    / mc_scale
-                idx = self.fallout_deriv_loc(self.dsd_deriv_names[i])
-                raw[idx] = fallout_deriv[i] / self.dsd_deriv_scales[i] \
-                                    / mc_scale
+            for i, dvar in enumerate(self.deriv_vars):
+                idx, num = self.dsd_deriv_loc(dvar.name)
+                raw[idx:idx+num] = \
+                    dvar.si_to_nondimensional(dsd_deriv[i,:]) / mc_scale
+                idx = self.fallout_deriv_loc(self.deriv_vars[i].name)
+                raw[idx] = \
+                    dvar.si_to_nondimensional(fallout_deriv[i]) / mc_scale
         else:
             assert dsd_deriv is None or len(dsd_deriv.flat) == 0, \
                 "no dsd derivatives should be specified for this descriptor"
@@ -227,16 +262,16 @@ class ModelStateDescriptor:
         if with_fallout is None:
             with_fallout = False
         nb = self.mass_grid.num_bins
-        ddn = self.dsd_deriv_num
+        dvn = self.deriv_var_num
         st_idx, st_num = self.dsd_loc(with_fallout=True)
         start = st_idx + st_num
         num = nb+1 if with_fallout else nb
-        if ddn == 0:
+        if dvn == 0:
             return [start], 0
         if var_name is None:
-            return [start + i*(nb+1) for i in range(ddn)], num
+            return [start + i*(nb+1) for i in range(dvn)], num
         else:
-            idx = self.dsd_deriv_names.index(var_name)
+            idx = self.find_deriv_var_index(var_name)
             return start + idx*(nb+1), num
 
     def fallout_deriv_loc(self, var_name=None):
@@ -290,15 +325,15 @@ class ModelStateDescriptor:
                               the variable named by this string.
 
         If var_name is not provided, a 2D array of size
-        `(dsd_deriv_num, num_bins)` is returned, with all derivatives in it.
+        `(deriv_var_num, num_bins)` is returned, with all derivatives in it.
         If var_name is provided, a 1D array of size num_bins is returned.
         """
         nb = self.mass_grid.num_bins
-        ddn = self.dsd_deriv_num
+        dvn = self.deriv_var_num
         idx, num = self.dsd_deriv_loc(var_name, with_fallout)
         if var_name is None:
-            output = np.zeros((ddn, num))
-            for i in range(ddn):
+            output = np.zeros((dvn, num))
+            for i in range(dvn):
                 output[i,:] = raw[idx[i]:idx[i]+num]
             return output
         else:
@@ -315,11 +350,11 @@ class ModelStateDescriptor:
         returned. If var_name is provided, information for just that derivative
         is returned.
         """
-        ddn = self.dsd_deriv_num
+        dvn = self.deriv_var_num
         idx = self.fallout_deriv_loc(var_name)
         if var_name is None:
-            output = np.zeros((ddn,))
-            for i in range(ddn):
+            output = np.zeros((dvn,))
+            for i in range(dvn):
                 output[i] = raw[idx[i]]
             return output
         else:
@@ -343,17 +378,18 @@ class ModelStateDescriptor:
         return pc @ pc.T
 
     def to_netcdf(self, netcdf_file):
-        netcdf_file.write_dimension("dsd_deriv_num", self.dsd_deriv_num)
-        netcdf_file.write_dimension("dsd_deriv_name_str_len",
-                                    self.dsd_deriv_name_str_len)
-        netcdf_file.write_characters("dsd_deriv_names", self.dsd_deriv_names,
-            ['dsd_deriv_num', 'dsd_deriv_name_str_len'],
+        netcdf_file.write_dimension("deriv_var_num", self.deriv_var_num)
+        netcdf_file.write_dimension("deriv_var_name_str_len",
+                                    DerivativeVar.name_str_len)
+        netcdf_file.write_characters("deriv_var_names",
+            [dvar.name for dvar in self.deriv_vars],
+            ['deriv_var_num', 'deriv_var_name_str_len'],
             "Names of variables with respect to which we evolve the "
-            "derivative of the drop size distribution")
-        netcdf_file.write_array("dsd_deriv_scales", self.dsd_deriv_scales,
-            "f8", ["dsd_deriv_num"], "1",
-            "Scaling factors used for nondimensionalization of drop size "
-            "distribution derivatives")
+            "derivative of the state")
+        netcdf_file.write_array("deriv_var_scales",
+            np.array([dvar.scale for dvar in self.deriv_vars]),
+            "f8", ["deriv_var_num"], "1",
+            "Scaling factors used for nondimensionalization of derivatives")
         pn = self.perturb_num
         netcdf_file.write_dimension("perturb_num", pn)
         if pn == 0:
@@ -397,14 +433,15 @@ class ModelStateDescriptor:
 
     @classmethod
     def from_netcdf(cls, netcdf_file, constants, mass_grid):
-        dsd_deriv_names = netcdf_file.read_characters('dsd_deriv_names')
-        dsd_deriv_scales = netcdf_file.read_array('dsd_deriv_scales')
+        deriv_var_names = netcdf_file.read_characters('deriv_var_names')
+        deriv_var_scales = netcdf_file.read_array('deriv_var_scales')
+        deriv_vars = [DerivativeVar(name, scale)
+                      for name, scale in zip(deriv_var_names, deriv_var_scales)]
         pn = netcdf_file.read_dimension("perturb_num")
         if pn == 0:
             return ModelStateDescriptor(constants, mass_grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
-                                    scale_inputs=False)
+                                        deriv_vars=deriv_vars,
+                                        scale_inputs=False)
         wvs = netcdf_file.read_array("perturb_wvs")
         transform_types = \
             netcdf_file.read_characters("perturb_transform_types")
@@ -420,8 +457,7 @@ class ModelStateDescriptor:
         perturbation_rate = netcdf_file.read_array("perturbation_rate")
         correction_time = netcdf_file.read_scalar("correction_time")
         return ModelStateDescriptor(constants, mass_grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+                                    deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time,

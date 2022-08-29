@@ -61,8 +61,8 @@ class Integrator:
         desc = state.desc
         times, raws = self.integrate_raw(t_len / tscale, state, proc_tens)
         times = times * tscale
-        ddn = desc.dsd_deriv_num
-        if ddn > 0:
+        dvn = desc.deriv_var_num
+        if dvn > 0:
             nb = desc.mass_grid.num_bins
             num_step = len(times) - 1
             ddsddt = np.zeros((num_step+1, nb))
@@ -71,7 +71,7 @@ class Integrator:
                 ddsddt[i,:] = states[i].dsd_time_deriv_raw(proc_tens)[:nb]
             pn = desc.perturb_num
             if pn > 0:
-                zeta_cov = np.zeros((num_step+1, ddn+1, ddn+1))
+                zeta_cov = np.zeros((num_step+1, dvn+1, dvn+1))
                 for i in range(num_step+1):
                     zeta_cov[i,:,:] = states[i].zeta_cov_raw(ddsddt[i,:])
             else:

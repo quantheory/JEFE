@@ -35,7 +35,7 @@ class Experiment:
     ddsddt (optional) - Raw derivative of DSD data.
                         Shape is `(num_time_steps, num_bins)`.
     zeta_cov - Raw covariance of DSD derivative variables (including time).
-               Shape is `(num_time_steps, dsd_deriv_num+1, dsd_deriv_num+1)`.
+               Shape is `(num_time_steps, deriv_var_num+1, deriv_var_num+1)`.
     """
     def __init__(self, desc, proc_tens, integrator, times, raws,
                  ddsddt=None, zeta_cov=None):
@@ -83,7 +83,7 @@ class Experiment:
                 it = i
             else:
                 it = times[i]
-            deriv = np.zeros((lf_num, self.desc.dsd_deriv_num+1))
+            deriv = np.zeros((lf_num, self.desc.deriv_var_num+1))
             for j in range(lf_num):
                 lfs[i,j], deriv[j,:] = \
                     self.states[it].linear_func_raw(wvs[j,:],
@@ -111,10 +111,10 @@ class Experiment:
                 "f8", ['time', 'num_bins'], "1",
                 "Nondimensionalized time derivative of DSD")
         if self.zeta_cov is not None:
-            netcdf_file.write_dimension("dsd_deriv_num+1",
-                                        self.desc.dsd_deriv_num+1)
+            netcdf_file.write_dimension("deriv_var_num+1",
+                                        self.desc.deriv_var_num+1)
             netcdf_file.write_array("zeta_cov", self.zeta_cov,
-                "f8", ['time', 'dsd_deriv_num+1', 'dsd_deriv_num+1'], "1",
+                "f8", ['time', 'deriv_var_num+1', 'deriv_var_num+1'], "1",
                 "Nondimensionalized error covariance of dsd_deriv variables "
                 "and time given the perturbed variable covariance in the "
                 "corresponding state")

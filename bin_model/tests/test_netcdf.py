@@ -43,8 +43,8 @@ class TestNetcdfFile(ArrayTestCase):
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
         self.ktens = KernelTensor(self.grid, kernel=self.kernel)
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         nvar = 3
         wv0 = self.grid.moment_weight_vector(0)
         wv6 = self.grid.moment_weight_vector(6)
@@ -59,9 +59,7 @@ class TestNetcdfFile(ArrayTestCase):
         perturbation_rate = error_rate**2 * np.eye(nvar)
         correction_time = 5.
         self.desc = ModelStateDescriptor(self.constants,
-                                    self.grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+                                         self.grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time)
@@ -318,12 +316,12 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_cgk(self.ktens)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
-        self.assertEqual(desc2.dsd_deriv_num, desc.dsd_deriv_num)
-        for i in range(desc.dsd_deriv_num):
-            self.assertEqual(desc2.dsd_deriv_names[i],
-                             desc.dsd_deriv_names[i])
-            self.assertEqual(desc2.dsd_deriv_scales[i],
-                             desc.dsd_deriv_scales[i])
+        self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
+        for i in range(desc.deriv_var_num):
+            self.assertEqual(desc2.deriv_vars[i].name,
+                             desc.deriv_vars[i].name)
+            self.assertEqual(desc2.deriv_vars[i].scale,
+                             desc.deriv_vars[i].scale)
         self.assertEqual(desc2.perturb_num, desc.perturb_num)
         for i in range(desc.perturb_num):
             for j in range(nb):
@@ -359,7 +357,7 @@ class TestNetcdfFile(ArrayTestCase):
         desc = ModelStateDescriptor(const, grid)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
-        self.assertEqual(desc2.dsd_deriv_num, desc.dsd_deriv_num)
+        self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
         self.assertEqual(desc2.perturb_num, desc.perturb_num)
 
     def test_desc_io_no_correction_time(self):
@@ -367,8 +365,8 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         self.NetcdfFile.write_cgk(self.ktens)
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = [self.constants.std_diameter, 1.]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+                      DerivativeVar('nu')]
         nvar = 3
         wv0 = self.grid.moment_weight_vector(0)
         wv6 = self.grid.moment_weight_vector(6)
@@ -381,19 +379,17 @@ class TestNetcdfFile(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
-        self.assertEqual(desc2.dsd_deriv_num, desc.dsd_deriv_num)
-        for i in range(desc.dsd_deriv_num):
-            self.assertEqual(desc2.dsd_deriv_names[i],
-                             desc.dsd_deriv_names[i])
-            self.assertEqual(desc2.dsd_deriv_scales[i],
-                             desc.dsd_deriv_scales[i])
+        self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
+        for i in range(desc.deriv_var_num):
+            self.assertEqual(desc2.deriv_vars[i].name,
+                             desc.deriv_vars[i].name)
+            self.assertEqual(desc2.deriv_vars[i].scale,
+                             desc.deriv_vars[i].scale)
         self.assertEqual(desc2.perturb_num, desc.perturb_num)
         for i in range(desc.perturb_num):
             for j in range(nb):

@@ -23,6 +23,39 @@ from bin_model.descriptor import *
 from .array_assert import ArrayTestCase
 
 
+class TestDerivativeVar(ArrayTestCase):
+    """
+    Test DerivativeVar methods.
+    """
+
+    def setUp(self):
+        self.deriv_var = DerivativeVar("lambda", 5.)
+
+    def test_deriv_var_too_long_name(self):
+        """Check error raised when DerivativeVar name is too long."""
+        with self.assertRaises(ValueError):
+            DerivativeVar("a" * 1024, 1.)
+
+    def test_deriv_var_matches_name(self):
+        """Check matching the name of a derivative variable."""
+        self.assertTrue(self.deriv_var.matches("lambda"))
+        self.assertFalse(self.deriv_var.matches("lam"))
+
+    def test_deriv_var_si_to_nondimensional(self):
+        """Check converting a derivative from SI units to nondimensional."""
+        self.assertAlmostEqual(self.deriv_var.si_to_nondimensional(1.), 5.)
+
+    def test_deriv_var_nondimensional_to_si(self):
+        """Check converting a derivative from nondimensional units to SI."""
+        self.assertAlmostEqual(self.deriv_var.nondimensional_to_si(1.), 0.2)
+
+    def test_deriv_var_default_scale(self):
+        """Check that derivative variable scale defaults to 1."""
+        dvar = DerivativeVar("lambda")
+        self.assertAlmostEqual(dvar.nondimensional_to_si(2.), 2.)
+        self.assertAlmostEqual(dvar.si_to_nondimensional(2.), 2.)
+
+
 class TestModelStateDescriptor(ArrayTestCase):
     """
     Test ModelStateDescriptor methods and attributes.
@@ -142,84 +175,74 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = ModelStateDescriptor(const, grid)
-        self.assertEqual(desc.dsd_deriv_num, 0)
-        self.assertEqual(desc.dsd_deriv_names, [])
-        self.assertEqual(len(desc.dsd_deriv_scales), 0)
+        self.assertEqual(desc.deriv_var_num, 0)
 
     def test_derivatives(self):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
-        self.assertEqual(desc.dsd_deriv_num, len(dsd_deriv_names))
-        self.assertEqual(desc.dsd_deriv_names, dsd_deriv_names)
-        for i in range(2):
-            self.assertEqual(desc.dsd_deriv_scales[i], dsd_deriv_scales[i])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
+        self.assertEqual(desc.deriv_var_num, len(deriv_vars))
         self.assertEqual(desc.state_len(), 3*nb+3)
+
+    def test_find_deriv_var_index(self):
+        """Check output of find_deriv_var_index."""
+        const = self.constants
+        grid = self.grid
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
+        self.assertEqual(desc.find_deriv_var_index('lambda'), 0)
+        self.assertEqual(desc.find_deriv_var_index('nu'), 1)
+
+    def test_find_deriv_var_index_raises(self):
+        """Check that find_deriv_var_index raises an error for invalid name."""
+        const = self.constants
+        grid = self.grid
+        deriv_vars = [DerivativeVar('lambda')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
+        with self.assertRaises(ValueError):
+            desc.find_deriv_var_index('nonsense')
+
+    def test_find_deriv_var(self):
+        """Check output of find_deriv_var."""
+        const = self.constants
+        grid = self.grid
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
+        self.assertEqual(desc.find_deriv_var('lambda').name, 'lambda')
+        self.assertEqual(desc.find_deriv_var('nu').name, 'nu')
+
+    def test_find_deriv_var_raises(self):
+        """Check that find_deriv_var raises an error for invalid name."""
+        const = self.constants
+        grid = self.grid
+        deriv_vars = [DerivativeVar('lambda')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
+        with self.assertRaises(ValueError):
+            desc.find_deriv_var('nonsense')
 
     def test_empty_derivatives(self):
         const = self.constants
         grid = self.grid
         desc = ModelStateDescriptor(const, grid)
-        dsd_deriv_names = []
-        dsd_deriv_scales = np.zeros((0,))
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
-        self.assertEqual(desc.dsd_deriv_num, 0)
-        self.assertEqual(desc.dsd_deriv_names, [])
-        self.assertEqual(len(desc.dsd_deriv_scales), 0)
+        desc = ModelStateDescriptor(const, grid, deriv_vars=[])
+        self.assertEqual(desc.deriv_var_num, 0)
 
-    def test_derivatives_raises_on_duplicate(self):
+    def test_derivatives_raises_on_duplicate_name(self):
+        """Check ValueError raised for duplicate derivative names."""
         const = self.constants
         grid = self.grid
-        dsd_deriv_names = ['lambda', 'lambda']
-        with self.assertRaises(AssertionError):
-            desc = ModelStateDescriptor(const, grid,
-                                        dsd_deriv_names=dsd_deriv_names)
-
-    def test_derivatives_default_scales(self):
-        const = self.constants
-        grid = self.grid
-        nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
-        self.assertEqual(len(desc.dsd_deriv_scales), 2)
-        self.assertEqual(desc.dsd_deriv_scales[0], 1.)
-        self.assertEqual(desc.dsd_deriv_scales[1], 1.)
-
-    def test_derivatives_raises_for_extra_scales(self):
-        const = self.constants
-        grid = self.grid
-        nb = self.grid.num_bins
-        dsd_deriv_scales = np.array([3., 4.])
-        with self.assertRaises(AssertionError):
-            ModelStateDescriptor(const, grid,
-                                 dsd_deriv_scales=dsd_deriv_scales)
-
-    def test_derivatives_raises_for_mismatched_scale_num(self):
-        const = self.constants
-        grid = self.grid
-        nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = np.array([3., 4.])
-        with self.assertRaises(AssertionError):
-            ModelStateDescriptor(const, grid,
-                                 dsd_deriv_names=dsd_deriv_names,
-                                 dsd_deriv_scales=dsd_deriv_scales)
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('lambda', 4.)]
+        with self.assertRaises(ValueError):
+            desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
 
     def test_dsd_deriv_loc_all(self):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idxs, num = desc.dsd_deriv_loc()
         self.assertEqual(idxs, [nb+1, 2*nb+2])
         self.assertEqual(num, nb)
@@ -228,9 +251,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idxs, num = desc.dsd_deriv_loc(with_fallout=True)
         self.assertEqual(idxs, [nb+1, 2*nb+2])
         self.assertEqual(num, nb+1)
@@ -239,9 +261,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idxs, num = desc.dsd_deriv_loc(with_fallout=False)
         self.assertEqual(idxs, [nb+1, 2*nb+2])
         self.assertEqual(num, nb)
@@ -250,9 +271,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idx, num = desc.dsd_deriv_loc('lambda')
         self.assertEqual(idx, nb+1)
         self.assertEqual(num, nb)
@@ -264,9 +284,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idx, num = desc.dsd_deriv_loc('lambda', with_fallout=True)
         self.assertEqual(idx, nb+1)
         self.assertEqual(num, nb+1)
@@ -278,9 +297,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idx, num = desc.dsd_deriv_loc('lambda', with_fallout=False)
         self.assertEqual(idx, nb+1)
         self.assertEqual(num, nb)
@@ -292,9 +310,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         with self.assertRaises(ValueError):
             desc.dsd_deriv_loc('nonsense')
 
@@ -302,9 +319,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idxs = desc.fallout_deriv_loc()
         self.assertEqual(idxs, [2*nb+1, 3*nb+2])
 
@@ -312,9 +328,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         idx = desc.fallout_deriv_loc('lambda')
         self.assertEqual(idx, 2*nb+1)
         idx = desc.fallout_deriv_loc('nu')
@@ -324,9 +339,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         with self.assertRaises(ValueError):
             idxs = desc.fallout_deriv_loc('nonsense')
 
@@ -334,9 +348,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         derivs = desc.dsd_deriv_raw(raw)
         self.assertEqual(derivs.shape, (2, nb))
@@ -348,9 +361,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         derivs = desc.dsd_deriv_raw(raw, with_fallout=True)
         self.assertEqual(derivs.shape, (2, nb+1))
@@ -362,9 +374,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         deriv = desc.dsd_deriv_raw(raw, 'lambda')
         self.assertEqual(len(deriv), nb)
@@ -379,9 +390,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         deriv = desc.dsd_deriv_raw(raw, 'lambda', with_fallout=True)
         self.assertEqual(len(deriv), nb+1)
@@ -396,9 +406,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         with self.assertRaises(ValueError):
             desc.dsd_deriv_raw(raw, 'nonsense')
@@ -407,9 +416,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         fallout_derivs = desc.fallout_deriv_raw(raw)
         self.assertEqual(len(fallout_derivs), 2)
@@ -420,9 +428,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         raw = np.linspace(0, 3*nb, 3*nb+3)
         fallout_deriv = desc.fallout_deriv_raw(raw, 'lambda')
         self.assertEqual(fallout_deriv, raw[2*nb+1])
@@ -433,9 +440,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
@@ -454,9 +460,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         with self.assertRaises(AssertionError):
@@ -479,9 +484,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb+1))
@@ -506,11 +510,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
@@ -524,16 +525,15 @@ class TestModelStateDescriptor(ArrayTestCase):
         for i in range(2):
             for j in range(nb):
                 self.assertAlmostEqual(actual_dsd_deriv[i,j],
-                                       dsd_deriv[i,j] / dsd_deriv_scales[i]
+                                       dsd_deriv[i,j] * deriv_vars[i].scale
                                           / dsd_scale)
 
     def test_construct_raw_with_fallout_derivatives(self):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
@@ -554,9 +554,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb))
@@ -573,9 +572,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names)
+        deriv_vars = [DerivativeVar('lambda'), DerivativeVar('nu')]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
         dsd_deriv = np.zeros((2, nb))
@@ -590,7 +588,6 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
         desc = ModelStateDescriptor(const, grid)
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
@@ -603,7 +600,6 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
         desc = ModelStateDescriptor(const, grid)
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
@@ -611,15 +607,12 @@ class TestModelStateDescriptor(ArrayTestCase):
         raw = desc.construct_raw(dsd, fallout=fallout,
                                  fallout_deriv=fallout_deriv)
 
-    def test_construct_raw_with_derivatives_scaling(self):
+    def test_construct_raw_with_fallout_derivatives_scaling(self):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales)
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars)
         dsd_scale = const.mass_conc_scale
         dsd = np.linspace(0, nb, nb)
         fallout = 200.
@@ -634,7 +627,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         self.assertEqual(actual_fallout_deriv.shape, fallout_deriv.shape)
         for i in range(2):
             self.assertAlmostEqual(actual_fallout_deriv[i],
-                                   fallout_deriv[i] / dsd_deriv_scales[i]
+                                   fallout_deriv[i] * deriv_vars[i].scale
                                       / dsd_scale)
 
     def test_perturbation_covariance(self):
@@ -649,8 +642,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                  d_max=1.e-3,
                                  num_bins=90)
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -663,9 +655,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         self.assertEqual(desc.perturb_num, nvar)
@@ -693,8 +683,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = np.array([3.])
+        deriv_vars = [DerivativeVar('lambda', 3.)]
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
         scale = 10. / np.log(10.)
@@ -704,9 +693,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         perturbation_rate = np.eye(3)
         with self.assertRaises(AssertionError):
-            desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+            desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
 
@@ -714,23 +701,21 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
+        deriv_vars = [DerivativeVar('lambda', 3.)]
         dsd_deriv_names = ['lambda']
         dsd_deriv_scales = np.array([3.])
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
         perturbation_rate = np.eye(3)
         with self.assertRaises(AssertionError):
-            desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+            desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbation_rate=perturbation_rate)
 
     def test_perturbation_covariance_allows_variables_without_rate(self):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = np.array([3.])
+        deriv_vars = [DerivativeVar('lambda', 3.)]
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
         scale = 10. / np.log(10.)
@@ -738,9 +723,7 @@ class TestModelStateDescriptor(ArrayTestCase):
             (wv0, LogTransform(), scale),
             (wv6, LogTransform(), 2.*scale),
         ]
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables)
         self.assertEqual(desc.perturbation_rate.shape, (2, 2))
         for i in range(2):
@@ -759,8 +742,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                  d_max=1.e-3,
                                  num_bins=90)
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = np.array([3.])
+        deriv_vars = [DerivativeVar('lambda', 3.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -774,9 +756,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         correction_time = 5.
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time)
@@ -795,8 +775,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                  d_max=1.e-3,
                                  num_bins=90)
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = np.array([3.])
+        deriv_vars = [DerivativeVar('lambda', 3.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -810,29 +789,24 @@ class TestModelStateDescriptor(ArrayTestCase):
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         with self.assertRaises(AssertionError):
-            desc = ModelStateDescriptor(const, grid,
-                                        dsd_deriv_names=dsd_deriv_names,
-                                        dsd_deriv_scales=dsd_deriv_scales,
+            desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                         perturbed_variables=perturbed_variables,
                                         perturbation_rate=perturbation_rate)
 
     def test_perturbation_covariance_correction_time_without_pv_raises(self):
         nb = self.grid.num_bins
-        dsd_deriv_names = ['lambda']
-        dsd_deriv_scales = np.array([3.])
+        deriv_vars = [DerivativeVar('lambda', 3.)]
         correction_time = 5.
         with self.assertRaises(AssertionError):
             desc = ModelStateDescriptor(self.constants, self.grid,
-                                        dsd_deriv_names=dsd_deriv_names,
-                                        dsd_deriv_scales=dsd_deriv_scales,
+                                        deriv_vars=deriv_vars,
                                         correction_time=correction_time)
 
     def test_perturb_chol_loc(self):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -845,9 +819,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         self.assertEqual(desc.perturb_chol_loc(),
@@ -857,8 +829,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -871,9 +842,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         sl = desc.state_len()
@@ -897,8 +866,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -911,9 +879,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         sl = desc.state_len()
@@ -946,8 +912,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                  d_max=1.e-3,
                                  num_bins=90)
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -960,9 +925,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         dsd = np.linspace(0, nb, nb)
@@ -1001,8 +964,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -1015,9 +977,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         dsd = np.linspace(0, nb, nb)
@@ -1033,8 +993,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         const = self.constants
         grid = self.grid
         nb = grid.num_bins
-        dsd_deriv_names = ['lambda', 'nu']
-        dsd_deriv_scales = np.array([3., 4.])
+        deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -1047,9 +1006,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid,
-                                    dsd_deriv_names=dsd_deriv_names,
-                                    dsd_deriv_scales=dsd_deriv_scales,
+        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
                                     perturbed_variables=perturbed_variables,
                                     perturbation_rate=perturbation_rate)
         dsd = np.linspace(0, nb, nb)
