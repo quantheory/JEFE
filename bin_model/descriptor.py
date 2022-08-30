@@ -71,6 +71,9 @@ class ModelStateDescriptor:
                               for testing and I/O utility code.
     """
 
+    small_error_variance = 1.e-50
+    """Used to initialize variables starting with near-zero error covariance."""
+
     def __init__(self, constants, mass_grid,
                  deriv_vars=None,
                  perturbed_variables=None, perturbation_rate=None,
@@ -100,9 +103,10 @@ class ModelStateDescriptor:
             self.perturb_scales = np.array([t[2] for t in perturbed_variables])
             self.perturbation_rate = np.zeros((pn, pn))
             if perturbation_rate is not None:
-                assert perturbation_rate.shape == (pn, pn), \
-                    "perturbation_rate is the wrong shape, should be " \
-                    + str((pn, pn))
+                if perturbation_rate.shape != (pn, pn):
+                    raise ValueError("perturbation_rate is shape"
+                                     f" {perturbation_rate.shape} but should be"
+                                     f" ({pn}, {pn})")
                 for i in range(pn):
                     for j in range(pn):
                         self.perturbation_rate[i,j] = perturbation_rate[i,j]
@@ -169,21 +173,27 @@ class ModelStateDescriptor:
         dvn = self.deriv_var_num
         pn = self.perturb_num
         mc_scale = self.constants.mass_conc_scale
-        assert len(dsd) == nb, "dsd of wrong size for this descriptor's grid"
+        if len(dsd) != nb:
+            in_size = len(dsd)
+            raise ValueError(f"input dsd is size {in_size} but the descriptor"
+                             f" grid size is {nb}")
         idx, num = self.dsd_loc()
         raw[idx:idx+num] = dsd / self.constants.mass_conc_scale
         if fallout is None:
             fallout = 0.
         raw[self.fallout_loc()] = fallout / mc_scale
         if dvn > 0:
-            assert dsd_deriv is not None, \
-                "dsd_deriv input is required, but missing"
-            assert (dsd_deriv.shape == (dvn, nb)), \
-                "dsd_deriv input is the wrong shape"
+            if dsd_deriv is None:
+                raise RuntimeError("dsd_deriv input is required, but missing")
+            if dsd_deriv.shape != (dvn, nb):
+                raise ValueError(f"dsd_deriv input is shape {dsd_deriv.shape}"
+                                 f" but expected shape ({dvn}, {nb}) array")
             if fallout_deriv is None:
                 fallout_deriv = np.zeros((dvn,))
-            assert len(fallout_deriv) == dvn, \
-                "fallout_deriv input is wrong length"
+            if len(fallout_deriv.flat) != dvn:
+                raise ValueError("fallout_deriv input is shape"
+                                 f" {fallout_deriv.shape}, but expected size"
+                                 f" {dvn} array")
             for i, dvar in enumerate(self.deriv_vars):
                 idx, num = self.dsd_deriv_loc(dvar.name)
                 raw[idx:idx+num] = \
@@ -192,22 +202,25 @@ class ModelStateDescriptor:
                 raw[idx] = \
                     dvar.si_to_nondimensional(fallout_deriv[i]) / mc_scale
         else:
-            assert dsd_deriv is None or len(dsd_deriv.flat) == 0, \
-                "no dsd derivatives should be specified for this descriptor"
-            assert fallout_deriv is None or len(fallout_deriv) == 0, \
-                "no fallout derivatives should be specified " \
-                "for this descriptor"
+            if dsd_deriv is not None and len(dsd_deriv.flat) != 0:
+                raise RuntimeError("no dsd derivatives should be specified for"
+                                   " this descriptor")
+            if fallout_deriv is not None and len(fallout_deriv) != 0:
+                raise RuntimeError("no fallout derivatives should be specified"
+                                   " for this descriptor")
         if pn > 0:
             if perturb_cov is not None:
-                assert (perturb_cov.shape == (pn, pn)), \
-                    "perturb_cov input is the wrong shape"
+                if perturb_cov.shape != (pn, pn):
+                    raise ValueError("perturb_cov input is shape"
+                                     f" {perturb_cov.shape} but expected shape "
+                                     f"({pn}, {pn}) array")
                 perturb_cov = perturb_cov.copy()
                 for i in range(pn):
                     for j in range(pn):
                         perturb_cov[i,j] /= \
                             self.perturb_scales[i] * self.perturb_scales[j]
             else:
-                perturb_cov = 1.e-50 * np.eye(pn)
+                perturb_cov = self.small_error_variance * np.eye(pn)
             idx, _ = self.perturb_chol_loc()
             chol = la.cholesky(perturb_cov, lower=True)
             ic = 0
@@ -216,9 +229,9 @@ class ModelStateDescriptor:
                     raw[idx+ic] = chol[i,j]
                     ic += 1
         else:
-            assert perturb_cov is None, \
-                "no perturbation covariance should be specified " \
-                "for this descriptor"
+            if perturb_cov is not None:
+                raise RuntimeError("no perturbation covariance should be "
+                                   "specified for this descriptor")
         return raw
 
     def dsd_loc(self, with_fallout=None):
