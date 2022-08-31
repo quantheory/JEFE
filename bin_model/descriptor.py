@@ -19,6 +19,9 @@ import scipy.linalg as la
 
 from bin_model.transform import Transform
 
+max_variable_name_len = 64
+"""Maximum length of variable name strings on file."""
+
 class DerivativeVar:
     """
     Describe a variable that we track the DSD derivative with respect to.
@@ -28,12 +31,12 @@ class DerivativeVar:
     scale - Used for nondimensionalization of derivatives.
     """
 
-    name_str_len = 64
-    """Maximum length of derivative variable name strings on file."""
-
     def __init__(self, name, scale=1.):
-        if len(name) > self.name_str_len:
-            raise ValueError(f"derivative variable name too long: {name}")
+        if len(name) > max_variable_name_len:
+            bad_len = len(name)
+            raise ValueError(f"derivative variable name too long: {name}"
+                             f" (length was {bad_len}, max is"
+                             f" {max_variable_name_len})")
         self.name = name
         self.scale = scale
 
@@ -48,6 +51,34 @@ class DerivativeVar:
     def nondimensional_to_si(self, derivative):
         """Convert unitless derivative to SI units."""
         return derivative / self.scale
+
+class PerturbedVar:
+    """
+    Describe a variable that we are tracking a perturbation to.
+
+    Currently, perturbed variables must be expressible as a function of a single
+    linear functional of the drop size distribution (e.g. moments or simple
+    transformations of moments).
+
+    Initialization arguments:
+    name - Variable name.
+    weight_vector - Vector used to convert drop size distribution to a linear
+                    functional.
+    transform - Transform object used to convert linear functional to the
+                desired variable.
+    scale - Scale used to nondimensionalize variable.
+    """
+
+    def __init__(self, name, weight_vector, transform, scale):
+        if len(name) > max_variable_name_len:
+            bad_len = len(name)
+            raise ValueError(f"perturbed variable name too long: {name}"
+                             f" (length was {bad_len}, max is"
+                             f" {max_variable_name_len})")
+        self.name = name
+        self.weight_vector = weight_vector
+        self.transform = transform
+        self.scale = scale
 
 
 class ModelStateDescriptor:
@@ -392,11 +423,11 @@ class ModelStateDescriptor:
 
     def to_netcdf(self, netcdf_file):
         netcdf_file.write_dimension("deriv_var_num", self.deriv_var_num)
-        netcdf_file.write_dimension("deriv_var_name_str_len",
-                                    DerivativeVar.name_str_len)
+        netcdf_file.write_dimension("variable_name_length",
+                                    max_variable_name_len)
         netcdf_file.write_characters("deriv_var_names",
             [dvar.name for dvar in self.deriv_vars],
-            ['deriv_var_num', 'deriv_var_name_str_len'],
+            ['deriv_var_num', 'variable_name_length'],
             "Names of variables with respect to which we evolve the "
             "derivative of the state")
         netcdf_file.write_array("deriv_var_scales",

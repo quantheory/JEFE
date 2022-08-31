@@ -34,7 +34,7 @@ class TestDerivativeVar(ArrayTestCase):
     def test_deriv_var_too_long_name(self):
         """Check error raised when DerivativeVar name is too long."""
         with self.assertRaises(ValueError):
-            DerivativeVar("a" * (DerivativeVar.name_str_len+1), 1.)
+            DerivativeVar("a" * (max_variable_name_len+1), 1.)
 
     def test_deriv_var_matches_name(self):
         """Check matching the name of a derivative variable."""
@@ -54,6 +54,34 @@ class TestDerivativeVar(ArrayTestCase):
         dvar = DerivativeVar("lambda")
         self.assertAlmostEqual(dvar.nondimensional_to_si(2.), 2.)
         self.assertAlmostEqual(dvar.si_to_nondimensional(2.), 2.)
+
+
+class TestPerturbedVar(ArrayTestCase):
+    """
+    Test PerturbedVar methods.
+    """
+
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        std_diameter=1.e-4,
+                                        rain_d=1.e-4,
+                                        mass_conc_scale=1.e-3,
+                                        time_scale=400.)
+        # Number of bins in grid.
+        self.nb = 90
+        self.grid = GeometricMassGrid(self.constants,
+                                      d_min=1.e-6,
+                                      d_max=1.e-3,
+                                      num_bins=self.nb)
+        self.wv = self.grid.moment_weight_vector(0)
+        self.perturb_var = PerturbedVar("M0", self.wv, LogTransform, 10.)
+
+    def test_perturb_var_too_long_name(self):
+        """Check error raised when PerturbedVar name is too long."""
+        with self.assertRaises(ValueError):
+            PerturbedVar("a" * (max_variable_name_len+1), self.wv,
+                         LogTransform, 10.)
 
 
 class TestModelStateDescriptor(ArrayTestCase):
