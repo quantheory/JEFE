@@ -123,7 +123,7 @@ class TestNetcdfFile(ArrayTestCase):
     def test_read_write_too_many_characters_raises(self):
         self.NetcdfFile.write_dimension('string_len', 2)
         string = "Hi there!"
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.write_characters('string', string, 'string_len',
                                              'A description')
 
@@ -142,7 +142,7 @@ class TestNetcdfFile(ArrayTestCase):
         dim = 5
         self.NetcdfFile.write_dimension('dim', dim)
         array = np.linspace(0., dim-1., dim+1)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.write_array('array', array,
                 'f8', ['dim'], '1', 'A description')
 
@@ -162,7 +162,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_dimension('string_num', 2)
         string = "Hi"
         string2 = "Bye"
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.write_characters(
                 'strings', [string, string2], ['string_len', 'string_num'],
                 'A description')
@@ -172,7 +172,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_dimension('string_num', 3)
         string = "Hi"
         string2 = "Bye"
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.write_characters(
                 'strings', [string, string2], ['string_len', 'string_num'],
                 'A description')
@@ -183,7 +183,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_dimension('lang_num', 2)
         string = "Hi"
         string2 = "By"
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.write_characters(
                 'strings', [string, string2],
                 ['string_len', 'lang_num', 'string_num'],
@@ -212,7 +212,7 @@ class TestNetcdfFile(ArrayTestCase):
         string3 = "Ho"
         string4 = "Ad"
         strings = [[string, string2], [string3, string4]]
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.NetcdfFile.write_characters(
                 'strings', strings, ['string_num', 'string_len'],
                 'A description')
@@ -419,7 +419,7 @@ class TestNetcdfFile(ArrayTestCase):
         itsl = self.NetcdfFile.read_dimension("integrator_type_str_len")
         self.NetcdfFile.nc['integrator_type'][:] = \
             nc4.stringtochar(np.array(['nonsense'], 'S{}'.format(itsl)))
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             integrator2 = self.NetcdfFile.read_integrator(const)
 
     def test_simple_experiment_io(self):

@@ -66,8 +66,9 @@ class Experiment:
         `(num_time_steps, lf_num, lf_num)`, which gives the covariance matrix
         at each time of the requested moments.
         """
-        assert (self.ddsddt is not None) and (self.zeta_cov is not None), \
-            "experiment did not produce covariance data to calculate with"
+        if (self.ddsddt is None) or (self.zeta_cov is None):
+            raise RuntimeError("experiment did not produce covariance data to"
+                               " calculate with")
         need_reshape = len(wvs.shape) == 1
         if need_reshape:
             wvs = wvs[None,:]

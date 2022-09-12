@@ -94,19 +94,22 @@ class NetcdfFile:
             dim_lens.append(self.read_dimension(dim))
         def assert_correct_shape(dim_lens, value):
             if len(dim_lens) > 1:
-                assert not isinstance(value, str), \
-                    "too many dimensions provided for string iterable"
-                assert dim_lens[0] == len(value), \
-                    "input string iterable is wrong shape for given " \
-                    "dimensions"
+                if isinstance(value, str):
+                    raise ValueError("too many dimensions provided for string"
+                                     " iterable")
+                if dim_lens[0] != len(value):
+                    raise ValueError("input string iterable is wrong shape for"
+                                     " given dimensions")
                 for i in range(dim_lens[0]):
                     assert_correct_shape(dim_lens[1:], value[i])
             else:
-                assert isinstance(value, str), \
-                    "too few dimensions provided for string iterable " \
-                    "or at least one value is not a string"
-                assert dim_lens[0] >= len(value), \
-                    "some input strings are too long for given array dimension"
+                if not isinstance(value, str):
+                    raise ValueError("too few dimensions provided for string"
+                                     " iterable or at least one value is not a"
+                                     " string")
+                if dim_lens[0] < len(value):
+                    raise ValueError("some input strings are too long for given"
+                                     " array dimension")
         assert_correct_shape(dim_lens, value)
         var = self.nc.createVariable(name, 'S1', dims)
         var.description = description
@@ -135,9 +138,9 @@ class NetcdfFile:
         units - String describing units of variable.
         description - Human-readable description of variable's meaning.
         """
-        assert value.shape == \
-            tuple([self.read_dimension(dim) for dim in dims]), \
-            "value shape does not match dimensions we were given to write to"
+        if value.shape != tuple([self.read_dimension(dim) for dim in dims]):
+            raise ValueError("value.shape does not match dimensions of array on"
+                             " file")
         var = self.nc.createVariable(name, dtype, dims)
         var.units = units
         var.description = description

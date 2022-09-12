@@ -246,9 +246,9 @@ class TestExperiment(ArrayTestCase):
         exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
                          ddsddt=ddsddt)
         wvs = self.grid.moment_weight_vector(6)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             exp.get_moments_and_covariances(wvs)
         exp = Experiment(self.desc, [self.ktens], self.integrator, times, raws,
                          zeta_cov=zeta_cov)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             exp.get_moments_and_covariances(wvs)

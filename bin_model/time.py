@@ -97,8 +97,8 @@ class Integrator:
         if integrator_type == "RK45":
             dt = netcdf_file.read_scalar("dt")
             return RK45Integrator(constants, dt)
-        else:
-            assert False, "integrator_type on file not recognized"
+        raise RuntimeError(f"integrator_type '{integrator_type}' on file not"
+                           " recognized")
 
 
 class RK45Integrator(Integrator):
@@ -145,14 +145,14 @@ class RK45Integrator(Integrator):
         solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
                              method='RK45', t_eval=times, max_step=self.dt,
                              atol=atol)
-        assert solbunch.status == 0, \
-            "integration failed: " + solbunch.message
+        if solbunch.status != 0:
+            raise RuntimeError("integration failed: " + solbunch.message)
         if state.desc.perturb_num > 0:
             for i in range(num_step+1):
                 pc = state.desc.perturb_cov_raw(solbunch.y[:,i])
-                assert np.all(la.eigvalsh(pc) >= 0.), \
-                        "negative covariance occurred at: " \
-                        + str(solbunch.t[i])
+                if np.any(la.eigvalsh(pc) < 0.):
+                    raise RuntimeError("negative covariance occurred at: " \
+                                       + str(solbunch.t[i]))
         output = np.transpose(solbunch.y)
         return times, output
 
