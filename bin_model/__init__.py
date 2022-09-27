@@ -15,7 +15,8 @@
 """A bin model with associated adjoint model used by JEFE."""
 
 from bin_model.constants import ModelConstants
-from bin_model.descriptor import DerivativeVar, ModelStateDescriptor
+from bin_model.descriptor import DerivativeVar, PerturbedVar, \
+    ModelStateDescriptor
 from bin_model.experiment import Experiment
 from bin_model.kernel import Kernel, LongKernel, HallKernel
 from bin_model.kernel_tensor import KernelTensor

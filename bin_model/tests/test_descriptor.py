@@ -131,21 +131,19 @@ class TestModelStateDescriptor(ArrayTestCase):
         deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
         self.deriv_var_scales = [3., 4.]
         self.pn = 3
-        wv0 = self.grid.moment_weight_vector(0)
-        wv6 = self.grid.moment_weight_vector(6)
-        wv9 = self.grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        self.pv = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), 2.*scale),
-            (wv9, LogTransform(), 3.*scale),
-        ]
+        l0 = PerturbedVar("L0", self.grid.moment_weight_vector(0),
+                          LogTransform(), scale)
+        l6 = PerturbedVar("L6", self.grid.moment_weight_vector(6),
+                          LogTransform(), 2.*scale)
+        l9 = PerturbedVar("L9", self.grid.moment_weight_vector(9),
+                          LogTransform(), 3.*scale)
         self.perturb_scales = [scale, 2.*scale, 3.*scale]
         error_rate = 0.5 / 60.
         self.perturbation_rate = error_rate**2 * np.eye(self.pn)
         return ModelStateDescriptor(self.constants, self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_variables=self.pv,
+                                    perturbed_vars=[l0, l6, l9],
                                     perturbation_rate=self.perturbation_rate)
 
     def test_state_len_dsd_only(self):
@@ -524,8 +522,8 @@ class TestModelStateDescriptor(ArrayTestCase):
             for j in range(self.pn):
                 self.assertAlmostEqual(desc.perturbation_rate[i,j],
                                          self.perturbation_rate[i,j] \
-                                             / self.pv[i][2] \
-                                             / self.pv[j][2] \
+                                             / self.perturb_scales[i] \
+                                             / self.perturb_scales[j] \
                                              * self.constants.time_scale)
 
     def test_perturbation_covariance_raises_for_mismatched_sizes(self):
@@ -537,14 +535,14 @@ class TestModelStateDescriptor(ArrayTestCase):
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), 2.*scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
         ]
         perturbation_rate = np.eye(3)
         with self.assertRaises(ValueError):
             desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate)
 
     def test_perturbation_covariance_correction_time(self):
@@ -566,16 +564,16 @@ class TestModelStateDescriptor(ArrayTestCase):
         wv6 = grid.moment_weight_vector(6)
         wv9 = grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), 2.*scale),
-            (wv9, LogTransform(), 3.*scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
+            PerturbedVar('L9', wv9, LogTransform(), 3.*scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         correction_time = 5.
         desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time)
         self.assertAlmostEqual(desc.correction_time,
@@ -600,16 +598,16 @@ class TestModelStateDescriptor(ArrayTestCase):
         wv6 = grid.moment_weight_vector(6)
         wv9 = grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), 2.*scale),
-            (wv9, LogTransform(), 3.*scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
+            PerturbedVar('L9', wv9, LogTransform(), 3.*scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         with self.assertRaises(AssertionError):
             desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                        perturbed_variables=perturbed_variables,
+                                        perturbed_vars=perturbed_vars,
                                         perturbation_rate=perturbation_rate)
 
     def test_perturbation_covariance_correction_time_without_pv_raises(self):

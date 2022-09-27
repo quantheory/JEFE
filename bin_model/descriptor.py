@@ -107,7 +107,7 @@ class ModelStateDescriptor:
 
     def __init__(self, constants, mass_grid,
                  deriv_vars=None,
-                 perturbed_variables=None, perturbation_rate=None,
+                 perturbed_vars=None, perturbation_rate=None,
                  correction_time=None, scale_inputs=None):
         if scale_inputs is None:
             scale_inputs = True
@@ -123,15 +123,17 @@ class ModelStateDescriptor:
         else:
             self.deriv_var_num = 0
             self.deriv_vars = []
-        if perturbed_variables is not None:
-            pn = len(perturbed_variables)
+        if perturbed_vars is not None:
+            pn = len(perturbed_vars)
             nb = mass_grid.num_bins
             self.perturb_num = pn
             self.perturb_wvs = np.zeros((pn, nb))
             for i in range(pn):
-                self.perturb_wvs[i,:] = perturbed_variables[i][0]
-            self.perturb_transforms = [t[1] for t in perturbed_variables]
-            self.perturb_scales = np.array([t[2] for t in perturbed_variables])
+                self.perturb_wvs[i,:] = perturbed_vars[i].weight_vector
+            self.perturb_transforms = [pvar.transform
+                                       for pvar in perturbed_vars]
+            self.perturb_scales = np.array([pvar.scale
+                                            for pvar in perturbed_vars])
             self.perturbation_rate = np.zeros((pn, pn))
             if perturbation_rate is not None:
                 if perturbation_rate.shape != (pn, pn):
@@ -143,8 +145,8 @@ class ModelStateDescriptor:
                         self.perturbation_rate[i,j] = perturbation_rate[i,j]
                         if scale_inputs:
                             self.perturbation_rate[i,j] *= constants.time_scale \
-                                / perturbed_variables[i][2] \
-                                / perturbed_variables[j][2]
+                                / self.perturb_scales[i] \
+                                / self.perturb_scales[j]
             if correction_time is not None:
                 self.correction_time = correction_time
                 if scale_inputs:
@@ -494,15 +496,16 @@ class ModelStateDescriptor:
                                             transform_params[i,:])
                       for i in range(pn)]
         perturb_scales = netcdf_file.read_array("perturb_scales")
-        perturbed_variables = []
+        perturbed_vars = []
         for i in range(pn):
-            perturbed_variables.append((wvs[i,:], transforms[i],
-                                        perturb_scales[i]))
+            perturbed_vars.append(PerturbedVar('a', wvs[i,:],
+                                               transforms[i],
+                                               perturb_scales[i]))
         perturbation_rate = netcdf_file.read_array("perturbation_rate")
         correction_time = netcdf_file.read_scalar("correction_time")
         return ModelStateDescriptor(constants, mass_grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time,
                                     scale_inputs=False)

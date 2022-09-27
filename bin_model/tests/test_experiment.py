@@ -18,8 +18,8 @@ import numpy as np
 import scipy.linalg as la
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, DerivativeVar, ModelStateDescriptor, \
-    ModelState, RK45Integrator
+    KernelTensor, LogTransform, DerivativeVar, PerturbedVar, \
+    ModelStateDescriptor, ModelState, RK45Integrator
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -54,10 +54,10 @@ class TestExperiment(ArrayTestCase):
         wv6 = self.grid.moment_weight_vector(6)
         wv9 = self.grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), scale),
-            (wv9, LogTransform(), scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), scale),
+            PerturbedVar('L9', wv9, LogTransform(), scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(pn)
@@ -65,7 +65,7 @@ class TestExperiment(ArrayTestCase):
         self.desc = ModelStateDescriptor(self.constants,
                                      self.grid,
                                      deriv_vars=deriv_vars,
-                                     perturbed_variables=perturbed_variables,
+                                     perturbed_vars=perturbed_vars,
                                      perturbation_rate=perturbation_rate,
                                      correction_time=correction_time)
         nu = 5.

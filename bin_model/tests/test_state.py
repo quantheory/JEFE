@@ -19,7 +19,8 @@ import scipy.linalg as la
 from scipy.special import gammainc
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, DerivativeVar, ModelStateDescriptor
+    KernelTensor, LogTransform, DerivativeVar, PerturbedVar, \
+    ModelStateDescriptor
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -748,17 +749,17 @@ class TestModelState(ArrayTestCase):
         wv6 = grid.moment_weight_vector(6)
         wv9 = grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), 2.*scale),
-            (wv9, LogTransform(), 3.*scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
+            PerturbedVar('L9', wv9, LogTransform(), 3.*scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
@@ -787,17 +788,17 @@ class TestModelState(ArrayTestCase):
         wv6 = grid.moment_weight_vector(6)
         wv9 = grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), scale),
-            (wv9, LogTransform(), scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), scale),
+            PerturbedVar('L9', wv9, LogTransform(), scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate)
         nu = 5.
         lam = nu / 1.e-3
@@ -841,7 +842,7 @@ class TestModelState(ArrayTestCase):
         mom_rates = np.zeros((nvar,))
         mom_rate_jac = np.zeros((nvar, 3))
         for i in range(nvar):
-            wv = perturbed_variables[i][0]
+            wv = perturbed_vars[i].weight_vector
             moms[i], mom_jac[i,:] = state.linear_func_raw(wv, derivative=True,
                                                           dfdt=dfdt)
             mom_rates[i], mom_rate_jac[i,:] = \
@@ -883,10 +884,10 @@ class TestModelState(ArrayTestCase):
         wv6 = grid.moment_weight_vector(6)
         wv9 = grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), scale),
-            (wv9, LogTransform(), scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), scale),
+            PerturbedVar('L9', wv9, LogTransform(), scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
@@ -894,7 +895,7 @@ class TestModelState(ArrayTestCase):
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate,
                                     correction_time=correction_time)
         self.assertAlmostEqual(desc.correction_time,
@@ -939,7 +940,7 @@ class TestModelState(ArrayTestCase):
         mom_rates = np.zeros((nvar,))
         mom_rate_jac = np.zeros((nvar, 2))
         for i in range(nvar):
-            wv = perturbed_variables[i][0]
+            wv = perturbed_vars[i].weight_vector
             moms[i], mom_jac[i,:] = state.linear_func_raw(wv, derivative=True,
                                                           dfdt=dfdt)
             mom_rates[i], mom_rate_jac[i,:] = \
@@ -990,17 +991,17 @@ class TestModelState(ArrayTestCase):
         wv6 = grid.moment_weight_vector(6)
         wv9 = grid.moment_weight_vector(9)
         scale = 10. / np.log(10.)
-        perturbed_variables = [
-            (wv0, LogTransform(), scale),
-            (wv6, LogTransform(), scale),
-            (wv9, LogTransform(), scale),
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), scale),
+            PerturbedVar('L9', wv9, LogTransform(), scale),
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(pn)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_variables=perturbed_variables,
+                                    perturbed_vars=perturbed_vars,
                                     perturbation_rate=perturbation_rate)
         nu = 5.
         lam = nu / 1.e-3
