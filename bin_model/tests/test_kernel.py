@@ -538,7 +538,7 @@ class TestLongKernel(unittest.TestCase):
         """Check _integral_cloud for the BOTH_VARY BoundType."""
         kernel = self.kernel
         lx_bound = (-2., -1.)
-        y_bound_p = (-1., 0.)
+        y_bound_p = (-0.9, 0.)
         expected = reference_long_cloud(kernel.kc, lx_bound,
                                         (1., y_bound_p[1])) \
                     - reference_long_cloud(kernel.kc, lx_bound,
