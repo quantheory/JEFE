@@ -52,6 +52,7 @@ class DerivativeVar:
         """Convert unitless derivative to SI units."""
         return derivative / self.scale
 
+
 class PerturbedVar:
     """
     Describe a variable that we are tracking a perturbation to.
@@ -126,14 +127,8 @@ class ModelStateDescriptor:
         if perturbed_vars is not None:
             pn = len(perturbed_vars)
             nb = mass_grid.num_bins
-            self.perturb_num = pn
-            self.perturb_wvs = np.zeros((pn, nb))
-            for i in range(pn):
-                self.perturb_wvs[i,:] = perturbed_vars[i].weight_vector
-            self.perturb_transforms = [pvar.transform
-                                       for pvar in perturbed_vars]
-            self.perturb_scales = np.array([pvar.scale
-                                            for pvar in perturbed_vars])
+            self.perturbed_num = pn
+            self.perturbed_vars = perturbed_vars
             self.perturbation_rate = np.zeros((pn, pn))
             if perturbation_rate is not None:
                 if perturbation_rate.shape != (pn, pn):
@@ -145,15 +140,15 @@ class ModelStateDescriptor:
                         self.perturbation_rate[i,j] = perturbation_rate[i,j]
                         if scale_inputs:
                             self.perturbation_rate[i,j] *= constants.time_scale \
-                                / self.perturb_scales[i] \
-                                / self.perturb_scales[j]
+                                / self.perturbed_vars[i].scale \
+                                / self.perturbed_vars[j].scale
             if correction_time is not None:
                 self.correction_time = correction_time
                 if scale_inputs:
                     self.correction_time /= constants.time_scale
             else:
                 assert pn == self.deriv_var_num + 1, \
-                    "must specify correction time unless perturb_num is " \
+                    "must specify correction time unless perturbed_num is " \
                     "equal to deriv_var_num+1"
                 self.correction_time = None
         else:
@@ -161,7 +156,7 @@ class ModelStateDescriptor:
                 "cannot specify perturbation_rate without perturbed_variables"
             assert correction_time is None, \
                 "cannot specify correction_time without perturbed_variables"
-            self.perturb_num = 0
+            self.perturbed_num = 0
 
     def state_len(self):
         """Return the length of the state vector."""
@@ -204,7 +199,7 @@ class ModelStateDescriptor:
         raw = np.zeros((self.state_len(),))
         nb = self.mass_grid.num_bins
         dvn = self.deriv_var_num
-        pn = self.perturb_num
+        pn = self.perturbed_num
         mc_scale = self.constants.mass_conc_scale
         if len(dsd) != nb:
             in_size = len(dsd)
@@ -251,7 +246,8 @@ class ModelStateDescriptor:
                 for i in range(pn):
                     for j in range(pn):
                         perturb_cov[i,j] /= \
-                            self.perturb_scales[i] * self.perturb_scales[j]
+                            self.perturbed_vars[i].scale \
+                            * self.perturbed_vars[j].scale
             else:
                 perturb_cov = self.small_error_variance * np.eye(pn)
             idx, _ = self.perturb_chol_loc()
@@ -344,7 +340,7 @@ class ModelStateDescriptor:
         element and num is the number of elements.
         """
         idx, num = self.dsd_deriv_loc(with_fallout=True)
-        pn = self.perturb_num
+        pn = self.perturbed_num
         return idx[-1] + num, (pn*(pn+1)) // 2
 
     def dsd_raw(self, raw, with_fallout=None):
@@ -409,7 +405,7 @@ class ModelStateDescriptor:
     def perturb_chol_raw(self, raw):
         """Return perturbation covariance Cholesky decomposition from state."""
         idx, _ = self.perturb_chol_loc()
-        pn = self.perturb_num
+        pn = self.perturbed_num
         pc = np.zeros((pn, pn))
         ic = 0
         for i in range(pn):
@@ -436,21 +432,29 @@ class ModelStateDescriptor:
             np.array([dvar.scale for dvar in self.deriv_vars]),
             "f8", ["deriv_var_num"], "1",
             "Scaling factors used for nondimensionalization of derivatives")
-        pn = self.perturb_num
-        netcdf_file.write_dimension("perturb_num", pn)
+        pn = self.perturbed_num
+        netcdf_file.write_dimension("perturbed_num", pn)
         if pn == 0:
             return
-        netcdf_file.write_array("perturb_wvs", self.perturb_wvs,
-            "f8", ["perturb_num", "num_bins"], "1",
+        netcdf_file.write_characters("perturbed_names",
+            [pvar.name for pvar in self.perturbed_vars],
+            ['perturbed_num', 'variable_name_length'],
+            "Names of variables for which we track the impact of perturbations")
+        wvs = np.zeros((pn, self.mass_grid.num_bins))
+        for i in range(pn):
+            wvs[i,:] = self.perturbed_vars[i].weight_vector
+        netcdf_file.write_array("perturbed_wvs", wvs,
+            "f8", ["perturbed_num", "num_bins"], "1",
             "Weight vectors defining perturbed variables to evolve over time")
         netcdf_file.write_dimension("transform_type_str_len",
                                     Transform.transform_type_str_len)
-        transform_types = [t.type_string() for t in self.perturb_transforms]
-        transform_params = [t.get_parameters()
-                            for t in self.perturb_transforms]
+        transform_types = [var.transform.type_string()
+                           for var in self.perturbed_vars]
+        transform_params = [var.transform.get_parameters()
+                            for var in self.perturbed_vars]
         netcdf_file.write_characters(
-            "perturb_transform_types", transform_types,
-            ["perturb_num", "transform_type_str_len"],
+            "perturbed_transform_types", transform_types,
+            ["perturbed_num", "transform_type_str_len"],
             "Types of transforms used for perturbed variables")
         max_param_num = 0
         for params in transform_params:
@@ -463,14 +467,15 @@ class ModelStateDescriptor:
             for j in range(len(params)):
                 param_array[i,j] = params[j]
         netcdf_file.write_array("transform_params", param_array,
-            "f8", ["perturb_num", "max_transform_param_num"], "1",
+            "f8", ["perturbed_num", "max_transform_param_num"], "1",
             "Parameters for transforms for perturbed variables")
-        netcdf_file.write_array("perturb_scales", self.perturb_scales,
-            "f8", ["perturb_num"], "1",
+        netcdf_file.write_array("perturbed_scales",
+            np.array([var.scale for var in self.perturbed_vars]),
+            "f8", ["perturbed_num"], "1",
             "Scaling factors used for nondimensionalization of perturbed "
             "variables")
         netcdf_file.write_array("perturbation_rate", self.perturbation_rate,
-            "f8", ["perturb_num", "perturb_num"], "1",
+            "f8", ["perturbed_num", "perturbed_num"], "1",
             "Matrix used to grow perturbation covariance over time")
         netcdf_file.write_scalar("correction_time", self.correction_time,
             "f8", "1",
@@ -483,24 +488,26 @@ class ModelStateDescriptor:
         deriv_var_scales = netcdf_file.read_array('deriv_var_scales')
         deriv_vars = [DerivativeVar(name, scale)
                       for name, scale in zip(deriv_var_names, deriv_var_scales)]
-        pn = netcdf_file.read_dimension("perturb_num")
+        pn = netcdf_file.read_dimension("perturbed_num")
         if pn == 0:
             return ModelStateDescriptor(constants, mass_grid,
                                         deriv_vars=deriv_vars,
                                         scale_inputs=False)
-        wvs = netcdf_file.read_array("perturb_wvs")
+        perturbed_names = netcdf_file.read_characters('perturbed_names')
+        wvs = netcdf_file.read_array("perturbed_wvs")
         transform_types = \
-            netcdf_file.read_characters("perturb_transform_types")
+            netcdf_file.read_characters("perturbed_transform_types")
         transform_params = netcdf_file.read_array("transform_params")
         transforms = [Transform.from_params(transform_types[i],
                                             transform_params[i,:])
                       for i in range(pn)]
-        perturb_scales = netcdf_file.read_array("perturb_scales")
+        perturbed_scales = netcdf_file.read_array("perturbed_scales")
         perturbed_vars = []
         for i in range(pn):
-            perturbed_vars.append(PerturbedVar('a', wvs[i,:],
+            perturbed_vars.append(PerturbedVar(perturbed_names[i],
+                                               wvs[i,:],
                                                transforms[i],
-                                               perturb_scales[i]))
+                                               perturbed_scales[i]))
         perturbation_rate = netcdf_file.read_array("perturbation_rate")
         correction_time = netcdf_file.read_scalar("correction_time")
         return ModelStateDescriptor(constants, mass_grid,

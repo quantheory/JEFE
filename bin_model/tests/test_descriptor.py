@@ -138,7 +138,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                           LogTransform(), 2.*scale)
         l9 = PerturbedVar("L9", self.grid.moment_weight_vector(9),
                           LogTransform(), 3.*scale)
-        self.perturb_scales = [scale, 2.*scale, 3.*scale]
+        self.perturbed_scales = [scale, 2.*scale, 3.*scale]
         error_rate = 0.5 / 60.
         self.perturbation_rate = error_rate**2 * np.eye(self.pn)
         return ModelStateDescriptor(self.constants, self.grid,
@@ -514,7 +514,7 @@ class TestModelStateDescriptor(ArrayTestCase):
     def test_perturbation_covariance(self):
         """Check state vector size when perturbed variables are provided."""
         desc = self.perturb_069_desc()
-        self.assertEqual(desc.perturb_num, self.pn)
+        self.assertEqual(desc.perturbed_num, self.pn)
         nchol = (self.pn * (self.pn + 1)) // 2
         self.assertEqual(desc.state_len(), 3*self.nb + 3 + nchol)
         self.assertEqual(desc.perturbation_rate.shape, (self.pn, self.pn))
@@ -522,8 +522,8 @@ class TestModelStateDescriptor(ArrayTestCase):
             for j in range(self.pn):
                 self.assertAlmostEqual(desc.perturbation_rate[i,j],
                                          self.perturbation_rate[i,j] \
-                                             / self.perturb_scales[i] \
-                                             / self.perturb_scales[j] \
+                                             / self.perturbed_scales[i] \
+                                             / self.perturbed_scales[j] \
                                              * self.constants.time_scale)
 
     def test_perturbation_covariance_raises_for_mismatched_sizes(self):
@@ -580,7 +580,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                correction_time / const.time_scale)
 
     def test_perturb_cov_requires_correction_time_when_dims_mismatch(self):
-        """Check correction time required when deriv_var_num != perturb_num."""
+        """Check correction time required if deriv_var_num != perturbed_num."""
         const = ModelConstants(rho_water=1000.,
                                rho_air=1.2,
                                std_diameter=1.e-4,
@@ -611,7 +611,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                         perturbation_rate=perturbation_rate)
 
     def test_perturbation_covariance_correction_time_without_pv_raises(self):
-        """Check correction time only allowed when perturb_num > 0."""
+        """Check correction time only allowed when perturbed_num > 0."""
         nb = self.grid.num_bins
         deriv_vars = [DerivativeVar('lambda', 3.)]
         correction_time = 5.
@@ -671,7 +671,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         expected = orig
         for i in range(self.pn):
             for j in range(self.pn):
-                expected[i,j] /= self.perturb_scales[i] * self.perturb_scales[j]
+                expected[i,j] /= self.perturbed_scales[i] \
+                    * self.perturbed_scales[j]
         self.assertArrayAlmostEqual(actual, expected)
 
     def test_perturb_cov_construct_raw_raises_if_perturb_unexpected(self):

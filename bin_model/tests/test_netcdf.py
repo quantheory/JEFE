@@ -322,16 +322,18 @@ class TestNetcdfFile(ArrayTestCase):
                              desc.deriv_vars[i].name)
             self.assertEqual(desc2.deriv_vars[i].scale,
                              desc.deriv_vars[i].scale)
-        self.assertEqual(desc2.perturb_num, desc.perturb_num)
-        for i in range(desc.perturb_num):
+        self.assertEqual(desc2.perturbed_num, desc.perturbed_num)
+        for i in range(desc.perturbed_num):
+            self.assertEqual(desc2.perturbed_vars[i].name,
+                             desc.perturbed_vars[i].name)
             for j in range(nb):
-                self.assertEqual(desc2.perturb_wvs[i,j],
-                                 desc.perturb_wvs[i,j])
-            self.assertEqual(desc2.perturb_transforms[i].transform(2.),
-                             desc.perturb_transforms[i].transform(2.))
-            self.assertEqual(desc2.perturb_scales[i],
-                             desc.perturb_scales[i])
-            for j in range(desc.perturb_num):
+                self.assertEqual(desc2.perturbed_vars[i].weight_vector[j],
+                                 desc.perturbed_vars[i].weight_vector[j])
+            self.assertEqual(desc2.perturbed_vars[i].transform.transform(2.),
+                             desc.perturbed_vars[i].transform.transform(2.))
+            self.assertEqual(desc2.perturbed_vars[i].scale,
+                             desc.perturbed_vars[i].scale)
+            for j in range(desc.perturbed_num):
                 self.assertEqual(desc2.perturbation_rate[i,j],
                                  desc.perturbation_rate[i,j])
         self.assertEqual(desc2.correction_time, desc.correction_time)
@@ -344,7 +346,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_cgk(self.ktens)
         self.NetcdfFile.write_descriptor(desc)
         ttsl = self.NetcdfFile.read_dimension("transform_type_str_len")
-        self.NetcdfFile.nc['perturb_transform_types'][0,:] = \
+        self.NetcdfFile.nc['perturbed_transform_types'][0,:] = \
             nc4.stringtochar(np.array(['nonsense'], 'S{}'.format(ttsl)))
         with self.assertRaises(ValueError):
             self.NetcdfFile.read_descriptor(const, grid)
@@ -358,7 +360,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
         self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
-        self.assertEqual(desc2.perturb_num, desc.perturb_num)
+        self.assertEqual(desc2.perturbed_num, desc.perturbed_num)
 
     def test_desc_io_no_correction_time(self):
         nb = self.grid.num_bins
@@ -390,16 +392,18 @@ class TestNetcdfFile(ArrayTestCase):
                              desc.deriv_vars[i].name)
             self.assertEqual(desc2.deriv_vars[i].scale,
                              desc.deriv_vars[i].scale)
-        self.assertEqual(desc2.perturb_num, desc.perturb_num)
-        for i in range(desc.perturb_num):
+        self.assertEqual(desc2.perturbed_num, desc.perturbed_num)
+        for i in range(desc.perturbed_num):
+            self.assertEqual(desc2.perturbed_vars[i].name,
+                             desc.perturbed_vars[i].name)
             for j in range(nb):
-                self.assertEqual(desc2.perturb_wvs[i,j],
-                                 desc.perturb_wvs[i,j])
-            self.assertEqual(desc2.perturb_transforms[i].transform(2.),
-                             desc.perturb_transforms[i].transform(2.))
-            self.assertEqual(desc2.perturb_scales[i],
-                             desc.perturb_scales[i])
-            for j in range(desc.perturb_num):
+                self.assertEqual(desc2.perturbed_vars[i].weight_vector[j],
+                                 desc.perturbed_vars[i].weight_vector[j])
+            self.assertEqual(desc2.perturbed_vars[i].transform.transform(2.),
+                             desc.perturbed_vars[i].transform.transform(2.))
+            self.assertEqual(desc2.perturbed_vars[i].scale,
+                             desc.perturbed_vars[i].scale)
+            for j in range(desc.perturbed_num):
                 self.assertEqual(desc2.perturbation_rate[i,j],
                                  desc.perturbation_rate[i,j])
         self.assertEqual(desc2.correction_time, desc.correction_time)
@@ -481,7 +485,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.assertEqual(len(files), 2)
         self.assertEqual(files[0], "k1.nc")
         self.assertEqual(files[1], "k2.nc")
-        self.assertEqual(exp2.desc.perturb_num, exp.desc.perturb_num)
+        self.assertEqual(exp2.desc.perturbed_num, exp.desc.perturbed_num)
         self.assertIs(exp2.proc_tens[0], ktens)
         self.assertEqual(exp2.integrator.dt, exp.integrator.dt)
         self.assertEqual(exp2.num_time_steps, exp.num_time_steps)

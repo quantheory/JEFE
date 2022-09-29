@@ -102,11 +102,11 @@ class ModelState:
     def perturb_cov(self):
         """Return perturbation covariance matrix."""
         output = self.desc.perturb_cov_raw(self.raw).copy()
-        pn = self.desc.perturb_num
-        pscales = self.desc.perturb_scales
+        pn = self.desc.perturbed_num
+        pvars = self.desc.perturbed_vars
         for i in range(pn):
             for j in range(pn):
-                output[i,j] *= pscales[i] * pscales[j]
+                output[i,j] *= pvars[i].scale * pvars[j].scale
         return output
 
     def dsd_time_deriv_raw(self, proc_tens):
@@ -132,7 +132,7 @@ class ModelState:
         desc = self.desc
         nb = self.mass_grid.num_bins
         dvn = desc.deriv_var_num
-        pn = desc.perturb_num
+        pn = desc.perturbed_num
         dfdt = np.zeros((len(self.raw),))
         dsd_raw = desc.dsd_raw(self.raw)
         dsd_deriv_raw = desc.dsd_deriv_raw(self.raw, with_fallout=True)
@@ -163,7 +163,7 @@ class ModelState:
             lf_rates = np.zeros((pn,))
             lf_rate_jac = np.zeros((pn, dvn+1))
             for i in range(pn):
-                wv = self.desc.perturb_wvs[i]
+                wv = self.desc.perturbed_vars[i].weight_vector
                 lfs[i], lf_jac[i,:] = \
                     self.linear_func_raw(wv, derivative=True,
                                          dfdt=ddsddt)
@@ -173,7 +173,7 @@ class ModelState:
             transform_mat = np.zeros((pn, pn))
             transform_mat2 = np.zeros((pn,))
             for i in range(pn):
-                transform = desc.perturb_transforms[i]
+                transform = desc.perturbed_vars[i].transform
                 transform_mat[i,i] = transform.derivative(lfs[i])
                 transform_mat2[i] = \
                     transform.second_over_first_derivative(lfs[i])
@@ -289,15 +289,17 @@ class ModelState:
         """
         desc = self.desc
         dvn = desc.deriv_var_num
-        pn = desc.perturb_num
+        pn = desc.perturbed_num
         lfs = np.zeros((pn,))
         lf_jac = np.zeros((pn, dvn+1))
         for i in range(pn):
-            wv = desc.perturb_wvs[i,:]
+            wv = desc.perturbed_vars[i].weight_vector
             lfs[i], lf_jac[i,:] = self.linear_func_raw(wv, derivative=True,
                                                        dfdt=ddsddt)
-        transform_mat = np.diag([desc.perturb_transforms[i].derivative(lfs[i])
-                                 for i in range(pn)])
+        transform_mat = np.diag(
+            [desc.perturbed_vars[i].transform.derivative(lfs[i])
+             for i in range(pn)]
+        )
         v_to_zeta = la.pinv(transform_mat @ lf_jac)
         # We are assuming here that perturb_cov does not need the "correction"
         # for pn > dvn + 1.

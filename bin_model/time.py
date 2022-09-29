@@ -69,7 +69,7 @@ class Integrator:
             states = [ModelState(desc, raws[i,:]) for i in range(num_step+1)]
             for i in range(num_step+1):
                 ddsddt[i,:] = states[i].dsd_time_deriv_raw(proc_tens)[:nb]
-            pn = desc.perturb_num
+            pn = desc.perturbed_num
             if pn > 0:
                 zeta_cov = np.zeros((num_step+1, dvn+1, dvn+1))
                 for i in range(num_step+1):
@@ -137,7 +137,7 @@ class RK45Integrator(Integrator):
         rate_fun = lambda t, raw: \
             ModelState(state.desc, raw).time_derivative_raw(proc_tens)
         atol = 1.e-6 * np.ones(raw_len)
-        pn = state.desc.perturb_num
+        pn = state.desc.perturbed_num
         pcidx, _ = state.desc.perturb_chol_loc()
         for i in range(pn):
             offset = (((i+1)*(i+2)) // 2) - 1
@@ -147,7 +147,7 @@ class RK45Integrator(Integrator):
                              atol=atol)
         if solbunch.status != 0:
             raise RuntimeError("integration failed: " + solbunch.message)
-        if state.desc.perturb_num > 0:
+        if state.desc.perturbed_num > 0:
             for i in range(num_step+1):
                 pc = state.desc.perturb_cov_raw(solbunch.y[:,i])
                 if np.any(la.eigvalsh(pc) < 0.):

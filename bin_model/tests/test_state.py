@@ -1023,11 +1023,13 @@ class TestModelState(ArrayTestCase):
         lfs = np.zeros((pn,))
         lf_jac = np.zeros((pn, dvn+1))
         for i in range(pn):
-            wv = desc.perturb_wvs[i]
+            wv = desc.perturbed_vars[i].weight_vector
             lfs[i], lf_jac[i,:] = state.linear_func_raw(wv, derivative=True,
                                                         dfdt=ddsddt_raw)
-        transform_mat = np.diag([desc.perturb_transforms[i].derivative(lfs[i])
-                                 for i in range(pn)])
+        transform_mat = np.diag(
+            [desc.perturbed_vars[i].transform.derivative(lfs[i])
+             for i in range(pn)]
+        )
         v_to_zeta = la.pinv(transform_mat @ lf_jac)
         perturb_cov = desc.perturb_cov_raw(state.raw)
         expected = v_to_zeta @ perturb_cov @ v_to_zeta.T
