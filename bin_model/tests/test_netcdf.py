@@ -17,7 +17,7 @@ import unittest
 from bin_model import ModelConstants, LongKernel, HallKernel, \
     GeometricMassGrid, KernelTensor, IdentityTransform, LogTransform, \
     QuadToLogTransform, DerivativeVar, PerturbedVar, ModelStateDescriptor, \
-    ModelState, RK45Integrator
+    ModelState, RK45Integrator, StochasticPerturbation
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -58,11 +58,12 @@ class TestNetcdfFile(ArrayTestCase):
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         correction_time = 5.
+        self.perturb = \
+            StochasticPerturbation(self.constants, perturbed_vars,
+                                   perturbation_rate, correction_time)
         self.desc = ModelStateDescriptor(self.constants,
                                          self.grid, deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate,
-                                    correction_time=correction_time)
+                                         perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-4
         dsd = gamma_dist_d(self.grid, lam, nu)
@@ -333,10 +334,6 @@ class TestNetcdfFile(ArrayTestCase):
                              desc.perturbed_vars[i].transform.transform(2.))
             self.assertEqual(desc2.perturbed_vars[i].scale,
                              desc.perturbed_vars[i].scale)
-            for j in range(desc.perturbed_num):
-                self.assertEqual(desc2.perturbation_rate[i,j],
-                                 desc.perturbation_rate[i,j])
-        self.assertEqual(desc2.correction_time, desc.correction_time)
 
     def test_desc_io_bad_transform_type(self):
         nb = self.grid.num_bins
@@ -361,52 +358,6 @@ class TestNetcdfFile(ArrayTestCase):
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
         self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
         self.assertEqual(desc2.perturbed_num, desc.perturbed_num)
-
-    def test_desc_io_no_correction_time(self):
-        nb = self.grid.num_bins
-        const = self.constants
-        grid = self.grid
-        self.NetcdfFile.write_cgk(self.ktens)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
-                      DerivativeVar('nu')]
-        nvar = 3
-        wv0 = self.grid.moment_weight_vector(0)
-        wv6 = self.grid.moment_weight_vector(6)
-        wv9 = self.grid.moment_weight_vector(9)
-        scale = 10. / np.log(10.)
-        perturbed_vars = [
-            PerturbedVar('L0', wv0, LogTransform(), scale),
-            PerturbedVar('L6', wv6, IdentityTransform(), scale),
-            PerturbedVar('L9', wv9, QuadToLogTransform(0.3), scale),
-        ]
-        error_rate = 0.5 / 60.
-        perturbation_rate = error_rate**2 * np.eye(nvar)
-        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate)
-        self.NetcdfFile.write_descriptor(desc)
-        desc2 = self.NetcdfFile.read_descriptor(const, grid)
-        self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
-        for i in range(desc.deriv_var_num):
-            self.assertEqual(desc2.deriv_vars[i].name,
-                             desc.deriv_vars[i].name)
-            self.assertEqual(desc2.deriv_vars[i].scale,
-                             desc.deriv_vars[i].scale)
-        self.assertEqual(desc2.perturbed_num, desc.perturbed_num)
-        for i in range(desc.perturbed_num):
-            self.assertEqual(desc2.perturbed_vars[i].name,
-                             desc.perturbed_vars[i].name)
-            for j in range(nb):
-                self.assertEqual(desc2.perturbed_vars[i].weight_vector[j],
-                                 desc.perturbed_vars[i].weight_vector[j])
-            self.assertEqual(desc2.perturbed_vars[i].transform.transform(2.),
-                             desc.perturbed_vars[i].transform.transform(2.))
-            self.assertEqual(desc2.perturbed_vars[i].scale,
-                             desc.perturbed_vars[i].scale)
-            for j in range(desc.perturbed_num):
-                self.assertEqual(desc2.perturbation_rate[i,j],
-                                 desc.perturbation_rate[i,j])
-        self.assertEqual(desc2.correction_time, desc.correction_time)
 
     def test_integrator_io(self):
         const = self.constants
@@ -451,7 +402,8 @@ class TestNetcdfFile(ArrayTestCase):
         integrator = self.integrator
         self.NetcdfFile.write_constants(const)
         self.NetcdfFile.write_mass_grid(grid)
-        exp = integrator.integrate(integrator.dt*2., self.state, [ktens])
+        exp = integrator.integrate(integrator.dt*2., self.state, [ktens],
+                                   self.perturb)
         self.NetcdfFile.write_experiment(exp)
         exp2 = self.NetcdfFile.read_experiment(desc, [ktens], integrator)
         num_step = len(exp.times) - 1
@@ -478,7 +430,8 @@ class TestNetcdfFile(ArrayTestCase):
         desc = self.desc
         ktens = self.ktens
         integrator = self.integrator
-        exp = integrator.integrate(integrator.dt*2., self.state, [ktens])
+        exp = integrator.integrate(integrator.dt*2., self.state, [ktens],
+                                   self.perturb)
         self.NetcdfFile.write_full_experiment(exp, ["k1.nc", "k2.nc"])
         exp2 = self.NetcdfFile.read_full_experiment([ktens])
         files = self.NetcdfFile.read_characters('proc_tens_files')

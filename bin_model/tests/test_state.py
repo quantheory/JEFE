@@ -20,7 +20,7 @@ from scipy.special import gammainc
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
     KernelTensor, LogTransform, DerivativeVar, PerturbedVar, \
-    ModelStateDescriptor
+    ModelStateDescriptor, StochasticPerturbation
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -754,13 +754,10 @@ class TestModelState(ArrayTestCase):
             PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
             PerturbedVar('L9', wv9, LogTransform(), 3.*scale),
         ]
-        error_rate = 0.5 / 60.
-        perturbation_rate = error_rate**2 * np.eye(nvar)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate)
+                                    perturbed_vars=perturbed_vars)
         dsd = np.linspace(0., nb-1, nb)
         dsd_deriv = np.zeros((2, nb))
         dsd_deriv[0,:] = dsd + 1.
@@ -795,11 +792,12 @@ class TestModelState(ArrayTestCase):
         ]
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
+        perturb = StochasticPerturbation(self.constants, perturbed_vars,
+                                         perturbation_rate)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate)
+                                    perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -815,7 +813,7 @@ class TestModelState(ArrayTestCase):
                                  perturb_cov=perturb_cov_init)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens])
+        actual = state.time_derivative_raw([ktens], perturb)
         nchol = (nvar * (nvar + 1)) // 2
         expected = np.zeros((3*nb+3+nchol,))
         expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
@@ -855,7 +853,7 @@ class TestModelState(ArrayTestCase):
         jacobian += np.diag(mom_rates * sof_deriv)
         cov_rate = jacobian @ perturb_cov_raw
         cov_rate += cov_rate.T
-        cov_rate += desc.perturbation_rate
+        cov_rate += perturb.perturbation_rate
         perturb_chol = desc.perturb_chol_raw(state.raw)
         cov_rate = la.solve(perturb_chol, cov_rate)
         cov_rate = np.transpose(la.solve(perturb_chol, cov_rate.T))
@@ -892,14 +890,12 @@ class TestModelState(ArrayTestCase):
         error_rate = 0.5 / 60.
         perturbation_rate = error_rate**2 * np.eye(nvar)
         correction_time = 5.
+        perturb = StochasticPerturbation(self.constants, perturbed_vars,
+                                         perturbation_rate, correction_time)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate,
-                                    correction_time=correction_time)
-        self.assertAlmostEqual(desc.correction_time,
-                               correction_time / self.constants.time_scale)
+                                    perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -913,7 +909,7 @@ class TestModelState(ArrayTestCase):
                                  perturb_cov=perturb_cov_init)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens])
+        actual = state.time_derivative_raw([ktens], perturb)
         nchol = (nvar * (nvar + 1)) // 2
         expected = np.zeros((2*nb+2+nchol,))
         expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
@@ -951,15 +947,15 @@ class TestModelState(ArrayTestCase):
         jacobian = transform @ mom_rate_jac @ la.pinv(zeta_to_v)
         sof_deriv = LogTransform().second_over_first_derivative(moms)
         jacobian += np.diag(mom_rates * sof_deriv)
-        sigma = desc.perturbation_rate
+        sigma = perturb.perturbation_rate
         projection = la.inv(zeta_to_v.T @ sigma @ zeta_to_v)
         projection = zeta_to_v @ projection @ zeta_to_v.T @ sigma
         perturb_cov_projected = projection @ perturb_cov_raw @ projection.T
         cov_rate = jacobian @ perturb_cov_projected
         cov_rate += cov_rate.T
-        cov_rate += desc.perturbation_rate
+        cov_rate += perturb.perturbation_rate
         cov_rate += (perturb_cov_projected - perturb_cov_raw) \
-            / desc.correction_time
+            / perturb.correction_time
         perturb_chol = desc.perturb_chol_raw(state.raw)
         cov_rate = la.solve(perturb_chol, cov_rate)
         cov_rate = np.transpose(la.solve(perturb_chol, cov_rate.T))
@@ -977,6 +973,47 @@ class TestModelState(ArrayTestCase):
         self.assertEqual(len(actual), 2*nb+2 + nchol)
         for i in range(2*nb+2 + nchol):
             self.assertAlmostEqual(actual[i], expected[i], places=9)
+
+    def test_time_derivative_raw_with_small_dvn_requires_correction(self):
+        """Check correction_time required if perturb_num > deriv_var_num+1."""
+        grid = self.grid
+        nb = grid.num_bins
+        kernel = LongKernel(self.constants)
+        ktens = KernelTensor(self.grid, kernel=kernel)
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
+        nvar = 3
+        wv0 = grid.moment_weight_vector(0)
+        wv6 = grid.moment_weight_vector(6)
+        wv9 = grid.moment_weight_vector(9)
+        scale = 10. / np.log(10.)
+        perturbed_vars = [
+            PerturbedVar('L0', wv0, LogTransform(), scale),
+            PerturbedVar('L6', wv6, LogTransform(), scale),
+            PerturbedVar('L9', wv9, LogTransform(), scale),
+        ]
+        error_rate = 0.5 / 60.
+        perturbation_rate = error_rate**2 * np.eye(nvar)
+        perturb = StochasticPerturbation(self.constants, perturbed_vars,
+                                         perturbation_rate)
+        desc = ModelStateDescriptor(self.constants,
+                                    self.grid,
+                                    deriv_vars=deriv_vars,
+                                    perturbed_vars=perturbed_vars)
+        nu = 5.
+        lam = nu / 1.e-3
+        dsd = gamma_dist_d(grid, lam, nu)
+        dsd_deriv = np.zeros((1, nb))
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        fallout_deriv = np.array([dsd_deriv[0,-4:].mean()])
+        perturb_cov_init = (10. / np.log(10.)) \
+            * (np.ones((nvar, nvar)) + np.eye(nvar))
+        raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
+                                 fallout_deriv=fallout_deriv,
+                                 perturb_cov=perturb_cov_init)
+        dsd_raw = desc.dsd_raw(raw)
+        state = ModelState(desc, raw)
+        with self.assertRaises(ValueError):
+            actual = state.time_derivative_raw([ktens], perturb)
 
     def test_zeta_cov(self):
         grid = self.grid
@@ -996,13 +1033,10 @@ class TestModelState(ArrayTestCase):
             PerturbedVar('L6', wv6, LogTransform(), scale),
             PerturbedVar('L9', wv9, LogTransform(), scale),
         ]
-        error_rate = 0.5 / 60.
-        perturbation_rate = error_rate**2 * np.eye(pn)
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate)
+                                    perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)

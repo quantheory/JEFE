@@ -30,7 +30,7 @@ class Integrator:
     integrator_type_str_len = 64
     """Length of integrator_type string on file."""
 
-    def integrate_raw(self, t_len, state, proc_tens):
+    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
@@ -38,6 +38,8 @@ class Integrator:
         state - Initial state.
         proc_tens - List of process tensors to calculate state process rates
                     each time step.
+        perturb (optional) - StochasticPerturbation affecting perturbed
+                             variables.
 
         Returns a tuple `(times, raws)`, where times is an array of times at
         which the output is provided, and raws is an array for which each row
@@ -45,7 +47,7 @@ class Integrator:
         """
         raise NotImplementedError
 
-    def integrate(self, t_len, state, proc_tens):
+    def integrate(self, t_len, state, proc_tens, perturb=None):
         """Integrate the state and return an Experiment.
 
         Arguments:
@@ -53,13 +55,16 @@ class Integrator:
         state - Initial state.
         proc_tens - List of process tensors to calculate state process rates
                     each time step.
+        perturb (optional) - StochasticPerturbation affecting perturbed
+                             variables.
 
         Returns an Experiment object summarizing the integration and all inputs
         to it.
         """
         tscale = self.constants.time_scale
         desc = state.desc
-        times, raws = self.integrate_raw(t_len / tscale, state, proc_tens)
+        times, raws = self.integrate_raw(t_len / tscale, state, proc_tens,
+                                         perturb)
         times = times * tscale
         dvn = desc.deriv_var_num
         if dvn > 0:
@@ -114,7 +119,7 @@ class RK45Integrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens):
+    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
@@ -122,6 +127,8 @@ class RK45Integrator(Integrator):
         state - Initial state.
         proc_tens - List of process tensors to calculate state process rates
                     each time step.
+        perturb (optional) - StochasticPerturbation affecting perturbed
+                             variables.
 
         Returns a tuple `(times, raws)`, where times is an array of times at
         which the output is provided, and raws is an array for which each row
@@ -135,7 +142,7 @@ class RK45Integrator(Integrator):
         times = np.linspace(0., t_len, num_step+1)
         raw_len = len(state.raw)
         rate_fun = lambda t, raw: \
-            ModelState(state.desc, raw).time_derivative_raw(proc_tens)
+            ModelState(state.desc, raw).time_derivative_raw(proc_tens, perturb)
         atol = 1.e-6 * np.ones(raw_len)
         pn = state.desc.perturbed_num
         pcidx, _ = state.desc.perturb_chol_loc()

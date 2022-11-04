@@ -122,17 +122,23 @@ class ModelState:
             dfdt += pt.calc_rate(dsd_raw, out_flux=True)
         return dfdt
 
-    def time_derivative_raw(self, proc_tens):
+    def time_derivative_raw(self, proc_tens, perturb=None):
         """Time derivative of the state using the given process tensors.
 
         Arguments:
         proc_tens - List of process tensors, the rates of which sum to give the
                     time derivative.
+        perturb (optional) - StochasticPerturbation affecting perturbed
+                             variables.
         """
         desc = self.desc
         nb = self.mass_grid.num_bins
         dvn = desc.deriv_var_num
         pn = desc.perturbed_num
+        if dvn+1 < pn and (perturb is None or perturb.correction_time is None):
+            raise ValueError("perturbation correction_time is not set, but"
+                             f" the dimension of perturbation ({pn}) exceeds"
+                             f" the dimension of derivative set ({dvn+1})")
         dfdt = np.zeros((len(self.raw),))
         dsd_raw = desc.dsd_raw(self.raw)
         dsd_deriv_raw = desc.dsd_deriv_raw(self.raw, with_fallout=True)
@@ -153,6 +159,12 @@ class ModelState:
             else:
                 dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
         if pn > 0:
+            if perturb is None:
+                perturbation_rate = np.zeros((pn, pn))
+                correction_time = None
+            else:
+                perturbation_rate = perturb.perturbation_rate
+                correction_time = perturb.correction_time
             ddsddt = desc.dsd_raw(dfdt)
             ddsddt_deriv = np.zeros((dvn+1,nb))
             ddsddt_deriv[0,:] = double_time_deriv[:nb]
@@ -180,10 +192,10 @@ class ModelState:
             zeta_to_v = transform_mat @ lf_jac
             jacobian = transform_mat @ lf_rate_jac @ la.pinv(zeta_to_v)
             jacobian += np.diag(lf_rates * transform_mat2)
-            if self.desc.correction_time is None:
+            if correction_time is None:
                 perturb_cov_projected = perturb_cov_raw
             else:
-                error_cov_inv = la.inv(desc.perturbation_rate)
+                error_cov_inv = la.inv(perturbation_rate)
                 projection = la.inv(zeta_to_v.T @ error_cov_inv
                                         @ zeta_to_v)
                 projection = zeta_to_v @ projection @ zeta_to_v.T \
@@ -192,10 +204,10 @@ class ModelState:
                                             @ projection.T
             cov_rate = jacobian @ perturb_cov_projected
             cov_rate += cov_rate.T
-            cov_rate += desc.perturbation_rate
-            if self.desc.correction_time is not None:
+            cov_rate += perturbation_rate
+            if correction_time is not None:
                 cov_rate += (perturb_cov_projected - perturb_cov_raw) \
-                                / self.desc.correction_time
+                                / correction_time
             # Convert this rate to a rate on the Cholesky decomposition.
             pcidx, pcnum = desc.perturb_chol_loc()
             perturb_chol = desc.perturb_chol_raw(self.raw)

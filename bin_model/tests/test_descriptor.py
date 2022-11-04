@@ -15,7 +15,6 @@
 """Test descriptor module."""
 
 import numpy as np
-import scipy.linalg as la
 
 from bin_model import ModelConstants, GeometricMassGrid, LogTransform
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -34,7 +33,7 @@ class TestDerivativeVar(ArrayTestCase):
     def test_deriv_var_too_long_name(self):
         """Check error raised when DerivativeVar name is too long."""
         with self.assertRaises(ValueError):
-            DerivativeVar("a" * (max_variable_name_len+1), 1.)
+            DerivativeVar("a" * (VARIABLE_NAME_LEN+1), 1.)
 
     def test_deriv_var_matches_name(self):
         """Check matching the name of a derivative variable."""
@@ -80,10 +79,11 @@ class TestPerturbedVar(ArrayTestCase):
     def test_perturb_var_too_long_name(self):
         """Check error raised when PerturbedVar name is too long."""
         with self.assertRaises(ValueError):
-            PerturbedVar("a" * (max_variable_name_len+1), self.wv,
+            PerturbedVar("a" * (VARIABLE_NAME_LEN+1), self.wv,
                          LogTransform, 10.)
 
 
+# pylint: disable-next=too-many-public-methods
 class TestModelStateDescriptor(ArrayTestCase):
     """
     Test ModelStateDescriptor methods and attributes.
@@ -102,6 +102,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                       d_min=1.e-6,
                                       d_max=1.e-3,
                                       num_bins=self.nb)
+        self.pn = 0
 
     def dsd_only_desc(self):
         """Return a descriptor containing a DSD and no other state variables."""
@@ -122,14 +123,12 @@ class TestModelStateDescriptor(ArrayTestCase):
     def lambda_nu_scaled_desc(self):
         """Return a descriptor containing two derivatives with scaling."""
         deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
-        self.deriv_var_scales = [3., 4.]
         return ModelStateDescriptor(self.constants, self.grid,
                                     deriv_vars=deriv_vars)
 
     def perturb_069_desc(self):
         """Return a descriptor with moments 0, 3, and 6 perturbed."""
         deriv_vars = [DerivativeVar('lambda', 3.), DerivativeVar('nu', 4.)]
-        self.deriv_var_scales = [3., 4.]
         self.pn = 3
         scale = 10. / np.log(10.)
         l0 = PerturbedVar("L0", self.grid.moment_weight_vector(0),
@@ -138,13 +137,9 @@ class TestModelStateDescriptor(ArrayTestCase):
                           LogTransform(), 2.*scale)
         l9 = PerturbedVar("L9", self.grid.moment_weight_vector(9),
                           LogTransform(), 3.*scale)
-        self.perturbed_scales = [scale, 2.*scale, 3.*scale]
-        error_rate = 0.5 / 60.
-        self.perturbation_rate = error_rate**2 * np.eye(self.pn)
         return ModelStateDescriptor(self.constants, self.grid,
                                     deriv_vars=deriv_vars,
-                                    perturbed_vars=[l0, l6, l9],
-                                    perturbation_rate=self.perturbation_rate)
+                                    perturbed_vars=[l0, l6, l9])
 
     def test_state_len_dsd_only(self):
         """Check that state length is correct for dsd only descriptor."""
@@ -260,8 +255,8 @@ class TestModelStateDescriptor(ArrayTestCase):
         """Check ValueError raised for duplicate derivative names."""
         deriv_vars = [DerivativeVar('lambda'), DerivativeVar('lambda')]
         with self.assertRaises(ValueError):
-            desc = ModelStateDescriptor(self.constants, self.grid,
-                                        deriv_vars=deriv_vars)
+            ModelStateDescriptor(self.constants, self.grid,
+                                 deriv_vars=deriv_vars)
 
     def test_dsd_deriv_loc_all_without_fallout(self):
         "Check dsd_deriv_loc for with_fallout=False."
@@ -329,7 +324,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         """Check that fallout_deriv_loc raises for bad variable name."""
         desc = self.lambda_nu_desc()
         with self.assertRaises(ValueError):
-            idxs = desc.fallout_deriv_loc('nonsense')
+            desc.fallout_deriv_loc('nonsense')
 
     def test_dsd_deriv_raw_all(self):
         """Check dsd_deriv_raw."""
@@ -419,14 +414,14 @@ class TestModelStateDescriptor(ArrayTestCase):
         """Check construct_raw raises if expected derivatives not provided."""
         desc = self.lambda_desc()
         with self.assertRaises(RuntimeError):
-            raw = desc.construct_raw(np.ones(self.nb))
+            desc.construct_raw(np.ones(self.nb))
 
     def test_construct_raw_raises_for_extra_derivative(self):
         """Check construct_raw raises if unexpected derivatives are provided."""
         desc = self.dsd_only_desc()
         with self.assertRaises(RuntimeError):
-            raw = desc.construct_raw(np.ones(self.nb),
-                                     dsd_deriv=np.ones((1, self.nb)))
+            desc.construct_raw(np.ones(self.nb),
+                               dsd_deriv=np.ones((1, self.nb)))
 
     def test_construct_raw_raises_for_wrong_derivative_shape(self):
         """Check construct_raw raises if dsd_deriv is wrong shape."""
@@ -454,7 +449,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         actual_dsd_deriv = desc.dsd_deriv_raw(raw)
         scaled_dsd_deriv = dsd_deriv / self.constants.mass_conc_scale
         for i in range(2):
-            scaled_dsd_deriv[i,:] *= self.deriv_var_scales[i]
+            scaled_dsd_deriv[i,:] *= desc.deriv_vars[i].scale
         self.assertArrayAlmostEqual(actual_dsd_deriv, scaled_dsd_deriv)
 
     def test_construct_raw_with_fallout_derivatives(self):
@@ -488,8 +483,7 @@ class TestModelStateDescriptor(ArrayTestCase):
         """Check construct_raw raises for unexpected fallout derivatives."""
         desc = self.dsd_only_desc()
         with self.assertRaises(RuntimeError):
-            raw = desc.construct_raw(np.ones(self.nb),
-                                     fallout_deriv=np.ones((1,)))
+            desc.construct_raw(np.ones(self.nb), fallout_deriv=np.ones((1,)))
 
     def test_construct_raw_allows_empty_fallout(self):
         """Check construct_raw allows unexpected empty fallout derivatives."""
@@ -505,7 +499,7 @@ class TestModelStateDescriptor(ArrayTestCase):
                                  fallout_deriv=fallout_deriv)
         actual_fallout_deriv = desc.fallout_deriv_raw(raw)
         scaled_fallout_deriv = np.array(
-            [fallout_deriv[i] * self.deriv_var_scales[i]
+            [fallout_deriv[i] * desc.deriv_vars[i].scale
              / self.constants.mass_conc_scale
              for i in range(2)]
         )
@@ -517,108 +511,6 @@ class TestModelStateDescriptor(ArrayTestCase):
         self.assertEqual(desc.perturbed_num, self.pn)
         nchol = (self.pn * (self.pn + 1)) // 2
         self.assertEqual(desc.state_len(), 3*self.nb + 3 + nchol)
-        self.assertEqual(desc.perturbation_rate.shape, (self.pn, self.pn))
-        for i in range(self.pn):
-            for j in range(self.pn):
-                self.assertAlmostEqual(desc.perturbation_rate[i,j],
-                                         self.perturbation_rate[i,j] \
-                                             / self.perturbed_scales[i] \
-                                             / self.perturbed_scales[j] \
-                                             * self.constants.time_scale)
-
-    def test_perturbation_covariance_raises_for_mismatched_sizes(self):
-        """Check error for mismatch in perturbed variables and rate size."""
-        const = self.constants
-        grid = self.grid
-        nb = grid.num_bins
-        deriv_vars = [DerivativeVar('lambda', 3.)]
-        wv0 = grid.moment_weight_vector(0)
-        wv6 = grid.moment_weight_vector(6)
-        scale = 10. / np.log(10.)
-        perturbed_vars = [
-            PerturbedVar('L0', wv0, LogTransform(), scale),
-            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
-        ]
-        perturbation_rate = np.eye(3)
-        with self.assertRaises(ValueError):
-            desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate)
-
-    def test_perturbation_covariance_correction_time(self):
-        """Check scaling on correction_time."""
-        const = ModelConstants(rho_water=1000.,
-                               rho_air=1.2,
-                               std_diameter=1.e-4,
-                               rain_d=1.e-4,
-                               mass_conc_scale=1.e-3,
-                               time_scale=400.)
-        grid = GeometricMassGrid(const,
-                                 d_min=1.e-6,
-                                 d_max=1.e-3,
-                                 num_bins=90)
-        nb = grid.num_bins
-        deriv_vars = [DerivativeVar('lambda', 3.)]
-        nvar = 3
-        wv0 = grid.moment_weight_vector(0)
-        wv6 = grid.moment_weight_vector(6)
-        wv9 = grid.moment_weight_vector(9)
-        scale = 10. / np.log(10.)
-        perturbed_vars = [
-            PerturbedVar('L0', wv0, LogTransform(), scale),
-            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
-            PerturbedVar('L9', wv9, LogTransform(), 3.*scale),
-        ]
-        error_rate = 0.5 / 60.
-        perturbation_rate = error_rate**2 * np.eye(nvar)
-        correction_time = 5.
-        desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                    perturbed_vars=perturbed_vars,
-                                    perturbation_rate=perturbation_rate,
-                                    correction_time=correction_time)
-        self.assertAlmostEqual(desc.correction_time,
-                               correction_time / const.time_scale)
-
-    def test_perturb_cov_requires_correction_time_when_dims_mismatch(self):
-        """Check correction time required if deriv_var_num != perturbed_num."""
-        const = ModelConstants(rho_water=1000.,
-                               rho_air=1.2,
-                               std_diameter=1.e-4,
-                               rain_d=1.e-4,
-                               mass_conc_scale=1.e-3,
-                               time_scale=400.)
-        grid = GeometricMassGrid(const,
-                                 d_min=1.e-6,
-                                 d_max=1.e-3,
-                                 num_bins=90)
-        nb = grid.num_bins
-        deriv_vars = [DerivativeVar('lambda', 3.)]
-        nvar = 3
-        wv0 = grid.moment_weight_vector(0)
-        wv6 = grid.moment_weight_vector(6)
-        wv9 = grid.moment_weight_vector(9)
-        scale = 10. / np.log(10.)
-        perturbed_vars = [
-            PerturbedVar('L0', wv0, LogTransform(), scale),
-            PerturbedVar('L6', wv6, LogTransform(), 2.*scale),
-            PerturbedVar('L9', wv9, LogTransform(), 3.*scale),
-        ]
-        error_rate = 0.5 / 60.
-        perturbation_rate = error_rate**2 * np.eye(nvar)
-        with self.assertRaises(AssertionError):
-            desc = ModelStateDescriptor(const, grid, deriv_vars=deriv_vars,
-                                        perturbed_vars=perturbed_vars,
-                                        perturbation_rate=perturbation_rate)
-
-    def test_perturbation_covariance_correction_time_without_pv_raises(self):
-        """Check correction time only allowed when perturbed_num > 0."""
-        nb = self.grid.num_bins
-        deriv_vars = [DerivativeVar('lambda', 3.)]
-        correction_time = 5.
-        with self.assertRaises(AssertionError):
-            desc = ModelStateDescriptor(self.constants, self.grid,
-                                        deriv_vars=deriv_vars,
-                                        correction_time=correction_time)
 
     def test_perturb_chol_loc(self):
         """Check perturb_chol_loc."""
@@ -671,25 +563,23 @@ class TestModelStateDescriptor(ArrayTestCase):
         expected = orig
         for i in range(self.pn):
             for j in range(self.pn):
-                expected[i,j] /= self.perturbed_scales[i] \
-                    * self.perturbed_scales[j]
+                expected[i,j] /= desc.perturbed_vars[i].scale \
+                    * desc.perturbed_vars[j].scale
         self.assertArrayAlmostEqual(actual, expected)
 
     def test_perturb_cov_construct_raw_raises_if_perturb_unexpected(self):
         """Check that construct_raw raises for unexpected perturb_cov."""
         desc = self.dsd_only_desc()
         with self.assertRaises(RuntimeError):
-            raw = desc.construct_raw(np.ones((self.nb)),
-                                     perturb_cov=np.eye(3))
+            desc.construct_raw(np.ones((self.nb)), perturb_cov=np.eye(3))
 
     def test_perturb_cov_construct_raw_raises_if_perturb_is_wrong_size(self):
         """Check that construct_raw raises for wrong-sized perturb_cov."""
         desc = self.perturb_069_desc()
-        orig = np.zeros((2, 2))
         with self.assertRaises(ValueError):
-            raw = desc.construct_raw(np.ones((self.nb,)),
-                                     dsd_deriv=np.ones((2, self.nb)),
-                                     perturb_cov=np.eye(2))
+            desc.construct_raw(np.ones((self.nb,)),
+                               dsd_deriv=np.ones((2, self.nb)),
+                               perturb_cov=np.eye(2))
 
     def test_perturb_cov_construct_raw_defaults_to_near_zero_cov(self):
         """Check that construct_raw starts with near-zero perturb_cov."""
