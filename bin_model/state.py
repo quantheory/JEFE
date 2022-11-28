@@ -88,16 +88,15 @@ class ModelState:
         returned, with all derivatives in it. If var_name is provided, a
         single scalar is returned for that derivative.
         """
+        fallout_deriv_raw = self.desc.fallout_deriv_raw(self.raw, var_name)
         if var_name is None:
-            output = self.desc.fallout_deriv_raw(self.raw)
+            output = np.zeros(fallout_deriv_raw.shape)
             for i, dvar in enumerate(self.desc.deriv_vars):
-                output[i] = dvar.nondimensional_to_si(output[i])
-            return output * self.constants.mass_conc_scale
+                output[i] = dvar.nondimensional_to_si(fallout_deriv_raw[i])
         else:
             dvar = self.desc.find_deriv_var(var_name)
-            fallout_deriv_raw = self.desc.fallout_deriv_raw(self.raw, var_name)
-            return dvar.nondimensional_to_si(fallout_deriv_raw) \
-                * self.constants.mass_conc_scale
+            output = dvar.nondimensional_to_si(fallout_deriv_raw)
+        return output * self.constants.mass_conc_scale
 
     def perturb_cov(self):
         """Return perturbation covariance matrix."""
@@ -122,6 +121,55 @@ class ModelState:
             dfdt += pt.calc_rate(dsd_raw, out_flux=True)
         return dfdt
 
+    # Better to just disable this check than to do a relatively "unnatural"
+    # refactoring just to reduce the number of short names given to variables.
+    def _apply_proc_tens(self, proc_tens, double_time_deriv):
+        """Apply proc_tens to self, returning raw vector time derivative.
+
+        Arguments:
+        proc_tens - List of process tensors, the rates of which sum to give the
+                    time derivative.
+        double_time_deriv - Array accumulating the second derivative of the dsd
+                            with respect to time. If input is None, then this
+                            calculation is not performed.
+        """
+        desc = self.desc
+        dvn = desc.deriv_var_num
+        dfdt = np.zeros((len(self.raw),))
+        dsd_raw = desc.dsd_raw(self.raw)
+        didx, dnum = desc.dsd_loc(with_fallout=True)
+        for pt in proc_tens:
+            if dvn > 0:
+                dfdt += self._apply_proc_tens_with_deriv(dsd_raw, pt,
+                                                         double_time_deriv)
+            else:
+                dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
+        return dfdt
+
+    def _apply_proc_tens_with_deriv(self, dsd_raw, pt, double_time_deriv):
+        """Apply single process tensor to self assuming dvn > 0.
+
+        Arguments:
+        dsd_raw - Raw dsd vector.
+        pt - The process tensor.
+        double_time_deriv - Array accumulating the second derivative of the dsd
+                            with respect to time. If input is None, then this
+                            calculation is not performed.
+        """
+        desc = self.desc
+        dfdt = np.zeros((len(self.raw),))
+        dsd_deriv_raw = desc.dsd_deriv_raw(self.raw, with_fallout=True)
+        didx, dnum = desc.dsd_loc(with_fallout=True)
+        dridxs, drnum = desc.dsd_deriv_loc(with_fallout=True)
+        rate, derivative = pt.calc_rate(dsd_raw, out_flux=True,
+                                        derivative=True)
+        dfdt[didx:didx+dnum] = rate
+        for i, dridx in enumerate(dridxs):
+            dfdt[dridx:dridx+drnum] = derivative @ dsd_deriv_raw[i,:]
+        if double_time_deriv is not None:
+            double_time_deriv += derivative @ rate
+        return dfdt
+
     def time_derivative_raw(self, proc_tens, perturb=None):
         """Time derivative of the state using the given process tensors.
 
@@ -139,25 +187,12 @@ class ModelState:
             raise ValueError("perturbation correction_time is not set, but"
                              f" the dimension of perturbation ({pn}) exceeds"
                              f" the dimension of derivative set ({dvn+1})")
-        dfdt = np.zeros((len(self.raw),))
-        dsd_raw = desc.dsd_raw(self.raw)
-        dsd_deriv_raw = desc.dsd_deriv_raw(self.raw, with_fallout=True)
-        didx, dnum = desc.dsd_loc(with_fallout=True)
-        dridxs, drnum = desc.dsd_deriv_loc(with_fallout=True)
         if pn > 0:
             double_time_deriv = np.zeros((nb+1))
-        for pt in proc_tens:
-            if dvn > 0:
-                rate, derivative = pt.calc_rate(dsd_raw, out_flux=True,
-                                                derivative=True)
-                dfdt[didx:didx+dnum] += rate
-                for i in range(dvn):
-                    dfdt[dridxs[i]:dridxs[i]+drnum] += \
-                        derivative @ dsd_deriv_raw[i,:]
-                if pn > 0:
-                    double_time_deriv += derivative @ rate
-            else:
-                dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
+        else:
+            # We don't need to calculate this without perturbations to apply.
+            double_time_deriv = None
+        dfdt = self._apply_proc_tens(proc_tens, double_time_deriv)
         if pn > 0:
             if perturb is None:
                 perturbation_rate = np.zeros((pn, pn))
@@ -209,6 +244,14 @@ class ModelState:
                 cov_rate += (perturb_cov_projected - perturb_cov_raw) \
                                 / correction_time
             # Convert this rate to a rate on the Cholesky decomposition.
+            # Say that PHI(A) is a function returning the lower-triangular
+            # matrix B such that B + B^T = A. Then derivatives of a matrix
+            # S = L L^T can be propagated to the Cholesky decomposition L using:
+            #     dL/dt = L PHI(L^{-1} dS/dt L^{-T})
+            # This can be derived by applying the matrix product rule to
+            # S = L L^T, multiplying by the inverses used above on the left and
+            # right sides, and noting that the result has the form of a matrix
+            # added to its transpose, allowing for simplification using PHI.
             pcidx, pcnum = desc.perturb_chol_loc()
             perturb_chol = desc.perturb_chol_raw(self.raw)
             chol_rate = la.solve(perturb_chol, cov_rate)
@@ -253,17 +296,17 @@ class ModelState:
             derivative = False
         dsd_raw = self.desc.dsd_raw(self.raw)
         nb = self.mass_grid.num_bins
-        if derivative:
-            dvn = self.desc.deriv_var_num
-            offset = 1 if dfdt is not None else 0
-            dsd_deriv_raw = np.zeros((dvn+offset, nb))
-            if dfdt is not None:
-                dsd_deriv_raw[0,:] = dfdt
-            dsd_deriv_raw[offset:,:] = self.desc.dsd_deriv_raw(self.raw)
-            grad = dsd_deriv_raw @ weight_vector
-            return np.dot(dsd_raw, weight_vector), grad
-        else:
-            return np.dot(dsd_raw, weight_vector)
+        lf = np.dot(dsd_raw, weight_vector)
+        if not derivative:
+            return lf
+        dvn = self.desc.deriv_var_num
+        offset = 1 if dfdt is not None else 0
+        dsd_deriv_raw = np.zeros((dvn+offset, nb))
+        if dfdt is not None:
+            dsd_deriv_raw[0,:] = dfdt
+        dsd_deriv_raw[offset:,:] = self.desc.dsd_deriv_raw(self.raw)
+        grad = dsd_deriv_raw @ weight_vector
+        return lf, grad
 
     def linear_func_rate_raw(self, weight_vector, dfdt, dfdt_deriv=None):
         """Calculate rate of change of a linear functional of the DSD.
@@ -287,10 +330,10 @@ class ModelState:
         where dvn is the number of derivatives that will be returned in the
         second argument.
         """
+        dlfdt = np.dot(dfdt, weight_vector)
         if dfdt_deriv is None:
-            return np.dot(dfdt, weight_vector)
-        else:
-            return np.dot(dfdt, weight_vector), dfdt_deriv @ weight_vector
+            return dlfdt
+        return dlfdt, dfdt_deriv @ weight_vector
 
     def zeta_cov_raw(self, ddsddt):
         """Find the raw error covariance of dsd_deriv variables and time.
@@ -371,17 +414,16 @@ class ModelState:
         accr = np.dot(-no_csc_or_auto[:nb]*cloud_vector, m3_vector)
         accr *= rate_scale
         rates = np.array([auto, accr])
-        if derivative:
-            rate_deriv = np.zeros((2, dvn+1))
-            rate_deriv[0,:] = (m3_vector * rain_vector) @ cloud_deriv[:nb,:] \
-                + cloud_deriv[nb,:]
-            no_soa_deriv = total_deriv - cloud_deriv
-            rate_deriv[1,:] = -(m3_vector * cloud_vector) @ no_soa_deriv[:nb,:]
-            rate_deriv *= rate_scale
-            rate_deriv[:,0] /= self.constants.time_scale
-            for i in range(dvn):
-                dvar = self.desc.deriv_vars[i]
-                rate_deriv[:,1+i] = dvar.nondimensional_to_si(rate_deriv[:,1+i])
-            return rates, rate_deriv
-        else:
+        if not derivative:
             return rates
+        rate_deriv = np.zeros((2, dvn+1))
+        rate_deriv[0,:] = (m3_vector * rain_vector) @ cloud_deriv[:nb,:] \
+            + cloud_deriv[nb,:]
+        no_soa_deriv = total_deriv - cloud_deriv
+        rate_deriv[1,:] = -(m3_vector * cloud_vector) @ no_soa_deriv[:nb,:]
+        rate_deriv *= rate_scale
+        rate_deriv[:,0] /= self.constants.time_scale
+        for i in range(dvn):
+            dvar = self.desc.deriv_vars[i]
+            rate_deriv[:,1+i] = dvar.nondimensional_to_si(rate_deriv[:,1+i])
+        return rates, rate_deriv
