@@ -166,7 +166,7 @@ class RK45Integrator(Integrator):
             offset = (((i+1)*(i+2)) // 2) - 1
             atol[pcidx+offset] = 1.e-300
         solbunch = solve_ivp(rate_fun, (times[0], times[-1]), state.raw,
-                             method='RK45', t_eval=times, max_step=self.dt,
+                             method='RK45', t_eval=times, max_step=self.dt_raw,
                              atol=atol)
         if solbunch.status != 0:
             raise RuntimeError("integration failed: " + solbunch.message)
