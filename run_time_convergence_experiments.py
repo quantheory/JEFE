@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from time import perf_counter
 import os
 
 import numpy as np
@@ -11,11 +12,11 @@ import bin_model as bm
 os.makedirs('convergence_experiments', exist_ok=True)
 
 KERNEL_FILE_NAME = \
-    os.path.join("kernels", "Hall_ScottChen_kernel_nb336.nc")
+    os.path.join("kernels", "Hall_ScottChen_kernel_nb168.nc")
 
 OUTPUT_FILE_NAME_TEMPLATE = \
     os.path.join("convergence_experiments",
-                 "time_convergence_experiment_dtexp{}.nc")
+                 "time_convergence_experiment_dtexp{}_{}.nc")
 
 # Initial conditions
 INITIAL_MASS = 1.e-3 # Initial mass concentration (kg/m^3)
@@ -25,8 +26,9 @@ INITIAL_NU = 6. # Shape parameter for initial condition
 # Run length in seconds
 END_TIME = 3600.
 
-# i-th time step in seconds will be 10. * 2**DTEXPS[i]
-DTEXPS = list(range(10))
+# i-th time step in seconds will be MAX_TIME_STEP * 2**(-DTEXPS[i])
+MAX_TIME_STEP = 80.
+DTEXPS = list(range(5))
 
 with nc4.Dataset(KERNEL_FILE_NAME, "r") as nc:
     netcdf_file = bm.NetcdfFile(nc)
@@ -43,11 +45,25 @@ dsd *= INITIAL_MASS / np.dot(dsd, grid.bin_widths)
 raw = desc.construct_raw(dsd)
 initial_state = bm.ModelState(desc, raw)
 
-for x in DTEXPS:
-    dt = 10. * 2**(-x)
-    integrator = bm.RK45Integrator(const, dt)
-    exp = integrator.integrate(END_TIME, initial_state, [ktens])
-    output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(x)
-    with nc4.Dataset(output_file_name, "w") as nc:
-        netcdf_file = bm.NetcdfFile(nc)
-        netcdf_file.write_full_experiment(exp, [KERNEL_FILE_NAME])
+integrator_types = {
+    'FE': bm.ForwardEulerIntegrator,
+    'RK4': bm.RK4Integrator,
+    'RK45': bm.RK45Integrator,
+}
+
+for integrator_name, integrator_type in integrator_types.items():
+    for x in DTEXPS:
+        print(integrator_name, x)
+        dt = MAX_TIME_STEP * 2**(-x)
+        integrator = integrator_type(const, dt)
+        start_time = perf_counter()
+        exp = integrator.integrate(END_TIME, initial_state, [ktens])
+        time_taken = perf_counter() - start_time
+        print(f"Time taken for x={x}, integrator={integrator_name} is"
+              f" {time_taken}.")
+        output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(x, integrator_name)
+        with nc4.Dataset(output_file_name, "w") as nc:
+            netcdf_file = bm.NetcdfFile(nc)
+            netcdf_file.write_full_experiment(exp, [KERNEL_FILE_NAME])
+            netcdf_file.write_scalar('wall_time_taken', time_taken, 'f8', 's',
+                                     "Time taken to run simulation")

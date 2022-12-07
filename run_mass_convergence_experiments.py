@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from time import perf_counter
 import os
 
 import numpy as np
@@ -10,7 +11,7 @@ import bin_model as bm
 
 os.makedirs('convergence_experiments', exist_ok=True)
 
-BIN_NUMBERS = [42 * 2**i for i in range(7)]
+BIN_NUMBERS = [42 * 2**i for i in range(5)]
 
 KERNEL_FILE_NAME_TEMPLATE = \
     os.path.join("kernels", "Hall_ScottChen_kernel_nb{}.nc")
@@ -28,7 +29,7 @@ INITIAL_NU = 6. # Shape parameter for initial condition
 END_TIME = 3600.
 
 # Time step in seconds
-DT = 1.
+DT = 80.
 
 kernel_file_name = KERNEL_FILE_NAME_TEMPLATE.format(BIN_NUMBERS[0])
 with nc4.Dataset(kernel_file_name, "r") as nc:
@@ -51,8 +52,13 @@ for nb in BIN_NUMBERS:
     raw = desc.construct_raw(dsd)
     initial_state = bm.ModelState(desc, raw)
     integrator = bm.RK45Integrator(const, DT)
+    start_time = perf_counter()
     exp = integrator.integrate(END_TIME, initial_state, [ktens])
+    time_taken = perf_counter() - start_time
+    print(f"Time taken for nb={nb} is {time_taken}.")
     output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(nb)
     with nc4.Dataset(output_file_name, "w") as nc:
         netcdf_file = bm.NetcdfFile(nc)
         netcdf_file.write_full_experiment(exp, [kernel_file_name])
+        netcdf_file.write_scalar('wall_time_taken', time_taken, 'f8', 's',
+                                 "Time taken to run simulation")
