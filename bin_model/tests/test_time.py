@@ -40,9 +40,9 @@ class TestIntegrator(ArrayTestCase):
             Integrator().to_netcdf(None)
 
 
-class TestRK45Integrator(ArrayTestCase):
+class IntegratorTestCase(ArrayTestCase):
     """
-    Test RK45Integrator methods and attributes.
+    Base case for testing Integrator subclasses.
     """
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
@@ -105,6 +105,11 @@ class TestRK45Integrator(ArrayTestCase):
                                       perturb_cov=perturb_cov_init)
         self.pc_state = ModelState(self.pc_desc, self.pc_raw)
 
+
+class TestRK45Integrator(IntegratorTestCase):
+    """
+    Test RK45Integrator methods and attributes.
+    """
     def test_integrate_raw(self):
         tscale = self.constants.time_scale
         dt = 1.e-5
@@ -189,3 +194,73 @@ class TestRK45Integrator(ArrayTestCase):
             for j in range(len(expected.flat)):
                 self.assertAlmostEqual(actual.flat[j] / scale,
                                        expected.flat[j] / scale)
+
+
+class TestForwardEulerIntegrator(IntegratorTestCase):
+    """
+    Test ForwardEulerIntegrator methods and attributes.
+    """
+    def test_integrate_raw(self):
+        tscale = self.constants.time_scale
+        dt = 0.1
+        num_step = 2
+        integrator = ForwardEulerIntegrator(self.constants, dt)
+        times, actual = integrator.integrate_raw(num_step*dt / tscale,
+                                                 self.state,
+                                                 [self.ktens])
+        expected = np.linspace(0., num_step*dt, num_step+1) / tscale
+        self.assertEqual(times.shape, (num_step+1,))
+        for i in range(num_step):
+            self.assertAlmostEqual(times[i], expected[i])
+        self.assertEqual(actual.shape, (num_step+1, len(self.raw)))
+        expected = np.zeros((num_step+1, len(self.raw)))
+        dt_scaled = dt / tscale
+        expected[0,:] = self.raw
+        for i in range(num_step):
+            expect_state = ModelState(self.desc, expected[i,:])
+            expected[i+1,:] = expected[i,:] \
+                + dt_scaled*expect_state.time_derivative_raw([self.ktens])
+        scale = expected.max()
+        for i in range(num_step+1):
+            for j in range(len(self.raw)):
+                self.assertAlmostEqual(actual[i,j]/scale, expected[i,j]/scale)
+
+
+class TestRK4Integrator(IntegratorTestCase):
+    """
+    Test RK4Integrator methods and attributes.
+    """
+    def test_integrate_raw(self):
+        tscale = self.constants.time_scale
+        dt = 0.1
+        num_step = 2
+        integrator = RK4Integrator(self.constants, dt)
+        times, actual = integrator.integrate_raw(num_step*dt / tscale,
+                                                 self.state,
+                                                 [self.ktens])
+        expected = np.linspace(0., num_step*dt, num_step+1) / tscale
+        self.assertEqual(times.shape, (num_step+1,))
+        for i in range(num_step):
+            self.assertAlmostEqual(times[i], expected[i])
+        self.assertEqual(actual.shape, (num_step+1, len(self.raw)))
+        expected = np.zeros((num_step+1, len(self.raw)))
+        dt_scaled = dt / tscale
+        expected[0,:] = self.raw
+        for i in range(num_step):
+            stage1_state = ModelState(self.desc, expected[i,:])
+            slope1 = stage1_state.time_derivative_raw([self.ktens])
+            stage2_state = ModelState(self.desc,
+                                      expected[i,:] + 0.5*dt_scaled*slope1)
+            slope2 = stage2_state.time_derivative_raw([self.ktens])
+            stage3_state = ModelState(self.desc,
+                                      expected[i,:] + 0.5*dt_scaled*slope2)
+            slope3 = stage3_state.time_derivative_raw([self.ktens])
+            stage4_state = ModelState(self.desc,
+                                      expected[i,:] + dt_scaled*slope3)
+            slope4 = stage4_state.time_derivative_raw([self.ktens])
+            expected[i+1,:] = expected[i,:] \
+                + (dt_scaled/6.) * (slope1 + 2.*slope2 + 2.*slope3 + slope4)
+        scale = expected.max()
+        for i in range(num_step+1):
+            for j in range(len(self.raw)):
+                self.assertAlmostEqual(actual[i,j]/scale, expected[i,j]/scale)

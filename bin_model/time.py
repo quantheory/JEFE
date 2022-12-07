@@ -66,6 +66,12 @@ class Integrator:
         times, raws = self.integrate_raw(t_len / tscale, state, proc_tens,
                                          perturb)
         times = times * tscale
+        if state.desc.perturbed_num > 0:
+            for i in range(raws.shape[0]):
+                pc = state.desc.perturb_cov_raw(raws[i,:])
+                if np.any(la.eigvalsh(pc) <= 0.):
+                    raise RuntimeError("nonpositive covariance occurred at: " \
+                                       + str(times[i]))
         dvn = desc.deriv_var_num
         if dvn > 0:
             nb = desc.mass_grid.num_bins
@@ -102,8 +108,22 @@ class Integrator:
         if integrator_type == "RK45":
             dt = netcdf_file.read_scalar("dt")
             return RK45Integrator(constants, dt)
+        elif integrator_type == "ForwardEuler":
+            dt = netcdf_file.read_scalar("dt")
+            return ForwardEulerIntegrator(constants, dt)
+        elif integrator_type == "RK4":
+            dt = netcdf_file.read_scalar("dt")
+            return RK4Integrator(constants, dt)
         raise RuntimeError(f"integrator_type '{integrator_type}' on file not"
                            " recognized")
+
+    def _get_times_util(self, t_len, dt):
+        """Get array of times given time length and time step."""
+        tol = dt * 1.e-10
+        num_step = int(t_len / dt)
+        if t_len - (num_step * dt) > tol:
+            num_step = num_step + 1
+        return np.linspace(0., t_len, num_step+1)
 
 
 class RK45Integrator(Integrator):
@@ -135,11 +155,7 @@ class RK45Integrator(Integrator):
         is the raw state vector at a different time.
         """
         dt = self.dt_raw
-        tol = dt * 1.e-10
-        num_step = int(t_len / dt)
-        if t_len - (num_step * dt) > tol:
-            num_step = num_step + 1
-        times = np.linspace(0., t_len, num_step+1)
+        times = self._get_times_util(t_len, dt)
         raw_len = len(state.raw)
         rate_fun = lambda t, raw: \
             ModelState(state.desc, raw).time_derivative_raw(proc_tens, perturb)
@@ -154,12 +170,6 @@ class RK45Integrator(Integrator):
                              atol=atol)
         if solbunch.status != 0:
             raise RuntimeError("integration failed: " + solbunch.message)
-        if state.desc.perturbed_num > 0:
-            for i in range(num_step+1):
-                pc = state.desc.perturb_cov_raw(solbunch.y[:,i])
-                if np.any(la.eigvalsh(pc) < 0.):
-                    raise RuntimeError("negative covariance occurred at: " \
-                                       + str(solbunch.t[i]))
         output = np.transpose(solbunch.y)
         return times, output
 
@@ -168,6 +178,118 @@ class RK45Integrator(Integrator):
         netcdf_file.write_dimension("integrator_type_str_len",
                                     self.integrator_type_str_len)
         netcdf_file.write_characters("integrator_type", "RK45",
+                                     "integrator_type_str_len",
+                                     "Type of time integration used")
+        netcdf_file.write_scalar("dt", self.dt,
+                                 "f8", "s",
+                                 "Maximum time step used by integrator")
+
+
+class ForwardEulerIntegrator(Integrator):
+    """
+    Integrate a model state in time using the Forward Euler method.
+
+    Initialization arguments:
+    constants - The ModelConstants object.
+    dt - Max time step at which to calculate the results.
+    """
+    def __init__(self, constants, dt):
+        self.constants = constants
+        self.dt = dt
+        self.dt_raw = dt / constants.time_scale
+
+    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+        """Integrate the state and return raw state data.
+
+        Arguments:
+        t_len - Length of time to integrate over (nondimensionalized units).
+        state - Initial state.
+        proc_tens - List of process tensors to calculate state process rates
+                    each time step.
+        perturb (optional) - StochasticPerturbation affecting perturbed
+                             variables.
+
+        Returns a tuple `(times, raws)`, where times is an array of times at
+        which the output is provided, and raws is an array for which each row
+        is the raw state vector at a different time.
+        """
+        dt = self.dt_raw
+        times = self._get_times_util(t_len, dt)
+        num_step = len(times) - 1
+        raw_len = len(state.raw)
+        output = np.zeros((num_step+1, raw_len))
+        output[0,:] = state.raw
+        for i in range(num_step):
+            step_state = ModelState(state.desc, output[i,:])
+            output[i+1,:] = output[i,:] + \
+                dt * step_state.time_derivative_raw(proc_tens, perturb)
+        return times, output
+
+    def to_netcdf(self, netcdf_file):
+        """Write Integrator to netCDF file."""
+        netcdf_file.write_dimension("integrator_type_str_len",
+                                    self.integrator_type_str_len)
+        netcdf_file.write_characters("integrator_type", "ForwardEuler",
+                                     "integrator_type_str_len",
+                                     "Type of time integration used")
+        netcdf_file.write_scalar("dt", self.dt,
+                                 "f8", "s",
+                                 "Maximum time step used by integrator")
+
+
+class RK4Integrator(Integrator):
+    """
+    Integrate a model state in time using the traditional RK4 method.
+
+    Initialization arguments:
+    constants - The ModelConstants object.
+    dt - Max time step at which to calculate the results.
+    """
+    def __init__(self, constants, dt):
+        self.constants = constants
+        self.dt = dt
+        self.dt_raw = dt / constants.time_scale
+
+    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+        """Integrate the state and return raw state data.
+
+        Arguments:
+        t_len - Length of time to integrate over (nondimensionalized units).
+        state - Initial state.
+        proc_tens - List of process tensors to calculate state process rates
+                    each time step.
+        perturb (optional) - StochasticPerturbation affecting perturbed
+                             variables.
+
+        Returns a tuple `(times, raws)`, where times is an array of times at
+        which the output is provided, and raws is an array for which each row
+        is the raw state vector at a different time.
+        """
+        dt = self.dt_raw
+        times = self._get_times_util(t_len, dt)
+        num_step = len(times) - 1
+        raw_len = len(state.raw)
+        output = np.zeros((num_step+1, raw_len))
+        output[0,:] = state.raw
+        num_stages = 4
+        for i in range(num_step):
+            slopes = np.zeros((num_stages, raw_len))
+            add_next = np.zeros((raw_len,))
+            coefs = [0.5, 0.5, 1., 0.]
+            for j in range(num_stages):
+                stage_state = ModelState(state.desc, output[i,:]+add_next)
+                slopes[j,:] = stage_state.time_derivative_raw(proc_tens,
+                                                              perturb)
+                add_next = coefs[j] * dt * slopes[j,:]
+            weights = (dt / 6.) * np.array([1., 2., 2., 1.])
+            output[i+1,:] = output[i,:] + weights @ slopes
+        return times, output
+
+    def to_netcdf(self, netcdf_file):
+        """Write Integrator to netCDF file."""
+        netcdf_file.write_dimension("integrator_type_str_len",
+                                    self.integrator_type_str_len)
+        netcdf_file.write_characters("integrator_type", "RK4",
                                      "integrator_type_str_len",
                                      "Type of time integration used")
         netcdf_file.write_scalar("dt", self.dt,
