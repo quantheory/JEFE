@@ -60,7 +60,7 @@ class NetcdfFile:
         if np.isnan(self.nc[name]):
             return None
         else:
-            return self.nc[name][...]
+            return self.nc[name][...].flat[0]
 
     def write_dimension(self, name, length):
         """Create a new dimension on a netCDF file.

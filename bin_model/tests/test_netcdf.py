@@ -110,6 +110,13 @@ class TestNetcdfFile(ArrayTestCase):
         actual = self.NetcdfFile.read_scalar('x')
         self.assertEqual(actual, x)
 
+    def test_read_write_scalar_type(self):
+        x = 25.
+        self.NetcdfFile.write_scalar('x', x, 'f8', '1',
+                                     'A description')
+        actual = self.NetcdfFile.read_scalar('x')
+        self.assertIsInstance(actual, float)
+
     def test_read_write_dimension(self):
         dim = 20
         self.NetcdfFile.write_dimension('dim', dim)
