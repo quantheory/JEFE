@@ -1,0 +1,44 @@
+Things that can be varied in JEFE runs:
+
+- Time resolution and integration method
+- Bin resolution
+- Initial gamma over diameter vs mass vs generalized gammas
+- Initial gamma distribution parameters
+- Run length
+- Number of categories
+- Category boundaries (threshold, "fuzziness")
+- Moment number and choices
+- Error type: initial condition vs. stochastic vs. discretization
+- Error transform and parameters
+- Error covariance diagonal entries' dependence on moment
+- Error correlation (off-diagonal entries)
+
+Runs to do before AGU:
+
+- Time resolution: Pick 80 seconds, RK45.
+- Bin resolution: nb168
+- Initial gamma over diameter
+- Initial condition: q=1g/kg, M0=100/cm^-3, nu=6
+- Run length: 3600s
+- Category/moment combinations:
+  - 2M 0-3 2cat with 80 micron threshold diameter
+  - 3M cloud 0-3-6 2M rain 2cat with 80 micron threshold diameter
+  - 2M 0-3 2cat with 50 micron threshold diameter
+  - 3M cloud 0-3-6 2M rain 2cat with 50 micron threshold diameter
+  - 3M 0-3-8?
+  - 3M cloud 3M rain with 0-3-6/0-3-8?
+  - 4M 1cat 0-3-6-9
+  - 4M 1cat 0-3-4-5
+  - 5M 1cat 0-3-6-9-12
+  - 5M 1cat 0-1-2-3-4
+  - 5M 1cat 1-2-3-4-5?
+  - 5M 1cat 2-3-4-5-6?
+  - 5M 1cat 0-2-3-4-6?
+- Error type: stochastic
+- Error transform: QuadToLog with heretofore "standard" scalings
+  - "Small" moment changes correspond to change of 100 cloud drops of size
+    20 microns and 1 extra rain drop of size 100 microns per hour.
+- Error covariance diagonal entries:
+  - (Multiple of) identity matrix
+  - Initial condition would be good
+- Error correlation: none
