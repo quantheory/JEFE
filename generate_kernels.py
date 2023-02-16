@@ -39,8 +39,9 @@ const = bm.ModelConstants(rho_water=RHO_WATER, rho_air=RHO_AIR, std_diameter=STD
 kernel = bm.HallKernel(const, 'ScottChen')
 
 for nb in BIN_NUMBERS:
+    print(f"Creating kernel with {nb} bins.")
     grid = bm.GeometricMassGrid(const, d_min=D_MIN, d_max=D_MAX, num_bins=nb)
-    ktens = bm.KernelTensor(kernel, grid)
+    ktens = bm.KernelTensor(grid, kernel=kernel)
     file_name = FILE_NAME_TEMPLATE.format(nb)
     with nc4.Dataset(file_name, "w") as nc:
         netcdf_file = bm.NetcdfFile(nc)
