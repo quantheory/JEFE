@@ -138,3 +138,6 @@ sensitivity_experiments
 # Plots output
 *.gif
 *.png
+
+# DS_Store on Macs
+.DS_Store
