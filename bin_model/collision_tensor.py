@@ -16,7 +16,7 @@
 
 import numpy as np
 
-class KernelTensor():
+class CollisionTensor():
     """
     Represent a collision kernel evaluated on a particular mass grid.
 
@@ -49,12 +49,12 @@ class KernelTensor():
         if data is not None:
             if kernel is not None:
                 raise RuntimeError("cannot supply both kernel and data to"
-                                   " KernelTensor constructor")
+                                   " CollisionTensor constructor")
             self.data = data
             return
         if kernel is None:
             raise RuntimeError("must provide either kernel or data to"
-                               " construct a KernelTensor")
+                               " construct a CollisionTensor")
         integrals = self._calc_kernel_integrals(kernel)
         const = grid.constants
         scaling = const.mass_conc_scale * const.time_scale / const.std_mass
@@ -178,14 +178,14 @@ class KernelTensor():
         netcdf_file.write_characters('boundary', self.boundary,
                                      'boundary_str_len',
                                      'Largest bin boundary condition')
-        netcdf_file.write_dimension('kernel_sparsity_dim', self.max_num)
-        netcdf_file.write_array('kernel_tensor_data', self.data,
-            'f8', ('num_bins', 'num_bins', 'kernel_sparsity_dim'), '1',
+        netcdf_file.write_dimension('tensor_sparsity_dim', self.max_num)
+        netcdf_file.write_array('collision_tensor_data', self.data,
+            'f8', ('num_bins', 'num_bins', 'tensor_sparsity_dim'), '1',
             'Nondimensionalized kernel tensor data')
 
     @classmethod
     def from_netcdf(cls, netcdf_file, grid):
         """Retrieve kernel tensor data from netCDF file."""
         boundary = netcdf_file.read_characters('boundary')
-        data = netcdf_file.read_array('kernel_tensor_data')
-        return KernelTensor(grid, boundary=boundary, data=data)
+        data = netcdf_file.read_array('collision_tensor_data')
+        return CollisionTensor(grid, boundary=boundary, data=data)

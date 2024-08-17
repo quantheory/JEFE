@@ -18,7 +18,7 @@ import numpy as np
 import scipy.linalg as la
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, DerivativeVar, PerturbedVar, \
+    CollisionTensor, LogTransform, DerivativeVar, PerturbedVar, \
     ModelStateDescriptor, ModelState, StochasticPerturbation
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
@@ -57,7 +57,7 @@ class IntegratorTestCase(ArrayTestCase):
                                       d_max=1.e-3,
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
-        self.ktens = KernelTensor(self.grid, kernel=self.kernel)
+        self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
                       DerivativeVar('nu')]
         self.desc = ModelStateDescriptor(self.constants,
@@ -117,7 +117,7 @@ class TestRK45Integrator(IntegratorTestCase):
         integrator = RK45Integrator(self.constants, dt)
         times, actual = integrator.integrate_raw(num_step*dt / tscale,
                                                  self.state,
-                                                 [self.ktens])
+                                                 [self.ctens])
         expected = np.linspace(0., num_step*dt, num_step+1) / tscale
         self.assertEqual(times.shape, (num_step+1,))
         for i in range(num_step):
@@ -129,7 +129,7 @@ class TestRK45Integrator(IntegratorTestCase):
         for i in range(num_step):
             expect_state = ModelState(self.desc, expected[i,:])
             expected[i+1,:] = expected[i,:] \
-                + dt_scaled*expect_state.time_derivative_raw([self.ktens])
+                + dt_scaled*expect_state.time_derivative_raw([self.ctens])
         scale = expected.max()
         for i in range(num_step+1):
             for j in range(len(self.raw)):
@@ -142,10 +142,10 @@ class TestRK45Integrator(IntegratorTestCase):
         integrator = RK45Integrator(self.constants, dt)
         exp = integrator.integrate(num_step*dt,
                                    self.state,
-                                   [self.ktens])
+                                   [self.ctens])
         self.assertIs(exp.desc, self.state.desc)
         self.assertEqual(len(exp.proc_tens), 1)
-        self.assertIs(exp.proc_tens[0], self.ktens)
+        self.assertIs(exp.proc_tens[0], self.ctens)
         self.assertIs(exp.integrator, integrator)
         times = exp.times
         states = exp.states
@@ -160,7 +160,7 @@ class TestRK45Integrator(IntegratorTestCase):
         for i in range(num_step):
             expect_state = ModelState(self.desc, expected[i,:])
             expected[i+1,:] = expected[i,:] \
-                + dt_scaled*expect_state.time_derivative_raw([self.ktens])
+                + dt_scaled*expect_state.time_derivative_raw([self.ctens])
         for i in range(num_step+1):
             actual_dsd = states[i].dsd()
             expected_dsd = expected[i,:nb] * self.constants.mass_conc_scale
@@ -177,11 +177,11 @@ class TestRK45Integrator(IntegratorTestCase):
         integrator = RK45Integrator(self.constants, dt)
         exp = integrator.integrate(num_step*dt,
                                    self.pc_state,
-                                   [self.ktens],
+                                   [self.ctens],
                                    self.perturb)
         for i in range(num_step+1):
             actual = exp.ddsddt[i,:]
-            expected = exp.states[i].dsd_time_deriv_raw([self.ktens])[:nb]
+            expected = exp.states[i].dsd_time_deriv_raw([self.ctens])[:nb]
             self.assertEqual(actual.shape, expected.shape)
             scale = expected.max()
             for j in range(len(expected)):
@@ -207,7 +207,7 @@ class TestForwardEulerIntegrator(IntegratorTestCase):
         integrator = ForwardEulerIntegrator(self.constants, dt)
         times, actual = integrator.integrate_raw(num_step*dt / tscale,
                                                  self.state,
-                                                 [self.ktens])
+                                                 [self.ctens])
         expected = np.linspace(0., num_step*dt, num_step+1) / tscale
         self.assertEqual(times.shape, (num_step+1,))
         for i in range(num_step):
@@ -219,7 +219,7 @@ class TestForwardEulerIntegrator(IntegratorTestCase):
         for i in range(num_step):
             expect_state = ModelState(self.desc, expected[i,:])
             expected[i+1,:] = expected[i,:] \
-                + dt_scaled*expect_state.time_derivative_raw([self.ktens])
+                + dt_scaled*expect_state.time_derivative_raw([self.ctens])
         scale = expected.max()
         for i in range(num_step+1):
             for j in range(len(self.raw)):
@@ -237,7 +237,7 @@ class TestRK4Integrator(IntegratorTestCase):
         integrator = RK4Integrator(self.constants, dt)
         times, actual = integrator.integrate_raw(num_step*dt / tscale,
                                                  self.state,
-                                                 [self.ktens])
+                                                 [self.ctens])
         expected = np.linspace(0., num_step*dt, num_step+1) / tscale
         self.assertEqual(times.shape, (num_step+1,))
         for i in range(num_step):
@@ -248,16 +248,16 @@ class TestRK4Integrator(IntegratorTestCase):
         expected[0,:] = self.raw
         for i in range(num_step):
             stage1_state = ModelState(self.desc, expected[i,:])
-            slope1 = stage1_state.time_derivative_raw([self.ktens])
+            slope1 = stage1_state.time_derivative_raw([self.ctens])
             stage2_state = ModelState(self.desc,
                                       expected[i,:] + 0.5*dt_scaled*slope1)
-            slope2 = stage2_state.time_derivative_raw([self.ktens])
+            slope2 = stage2_state.time_derivative_raw([self.ctens])
             stage3_state = ModelState(self.desc,
                                       expected[i,:] + 0.5*dt_scaled*slope2)
-            slope3 = stage3_state.time_derivative_raw([self.ktens])
+            slope3 = stage3_state.time_derivative_raw([self.ctens])
             stage4_state = ModelState(self.desc,
                                       expected[i,:] + dt_scaled*slope3)
-            slope4 = stage4_state.time_derivative_raw([self.ktens])
+            slope4 = stage4_state.time_derivative_raw([self.ctens])
             expected[i+1,:] = expected[i,:] \
                 + (dt_scaled/6.) * (slope1 + 2.*slope2 + 2.*slope3 + slope4)
         scale = expected.max()

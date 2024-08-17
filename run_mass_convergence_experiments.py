@@ -45,7 +45,7 @@ for nb in BIN_NUMBERS:
     kernel_file_name = KERNEL_FILE_NAME_TEMPLATE.format(nb)
     with nc4.Dataset(kernel_file_name, "r") as nc:
         netcdf_file = bm.NetcdfFile(nc)
-        const, kernel, grid, ktens = netcdf_file.read_cgk()
+        const, kernel, grid, ctens = netcdf_file.read_cgk()
     desc = bm.ModelStateDescriptor(const, grid)
     dsd = bm.gamma_dist_d(grid, lambda_init, INITIAL_NU)
     dsd *= INITIAL_MASS / np.dot(dsd, grid.bin_widths)
@@ -53,7 +53,7 @@ for nb in BIN_NUMBERS:
     initial_state = bm.ModelState(desc, raw)
     integrator = bm.RK45Integrator(const, DT)
     start_time = perf_counter()
-    exp = integrator.integrate(END_TIME, initial_state, [ktens])
+    exp = integrator.integrate(END_TIME, initial_state, [ctens])
     time_taken = perf_counter() - start_time
     print(f"Time taken for nb={nb} is {time_taken}.")
     output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(nb)

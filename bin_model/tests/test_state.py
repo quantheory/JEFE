@@ -19,7 +19,7 @@ import scipy.linalg as la
 from scipy.special import gammainc
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
-    KernelTensor, LogTransform, DerivativeVar, PerturbedVar, \
+    CollisionTensor, LogTransform, DerivativeVar, PerturbedVar, \
     ModelStateDescriptor, StochasticPerturbation
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
@@ -410,15 +410,15 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.dsd_time_deriv_raw([ktens])
-        expected = ktens.calc_rate(dsd_raw, out_flux=True)
+        actual = state.dsd_time_deriv_raw([ctens])
+        expected = ctens.calc_rate(dsd_raw, out_flux=True)
         self.assertEqual(len(actual), nb+1)
         for i in range(nb+1):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
@@ -428,15 +428,15 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.dsd_time_deriv_raw([ktens, ktens])
-        expected = 2.*ktens.calc_rate(dsd_raw, out_flux=True)
+        actual = state.dsd_time_deriv_raw([ctens, ctens])
+        expected = 2.*ctens.calc_rate(dsd_raw, out_flux=True)
         self.assertEqual(len(actual), nb+1)
         for i in range(nb+1):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
@@ -446,7 +446,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -463,15 +463,15 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens])
-        expected = state.dsd_time_deriv_raw([ktens])
+        actual = state.time_derivative_raw([ctens])
+        expected = state.dsd_time_deriv_raw([ctens])
         self.assertEqual(len(actual), nb+1)
         for i in range(nb+1):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
@@ -481,15 +481,15 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens, ktens])
-        expected = 2. * ktens.calc_rate(dsd_raw, out_flux=True)
+        actual = state.time_derivative_raw([ctens, ctens])
+        expected = 2. * ctens.calc_rate(dsd_raw, out_flux=True)
         self.assertEqual(len(actual), nb+1)
         for i in range(nb+1):
             self.assertAlmostEqual(actual[i], expected[i], places=10)
@@ -512,7 +512,7 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
                       DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
@@ -530,9 +530,9 @@ class TestModelState(ArrayTestCase):
                                  fallout_deriv=fallout_deriv)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens])
+        actual = state.time_derivative_raw([ctens])
         expected = np.zeros((3*nb+3,))
-        expected[:nb+1], derivative = ktens.calc_rate(dsd_raw, derivative=True,
+        expected[:nb+1], derivative = ctens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
         dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
@@ -649,7 +649,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -659,15 +659,15 @@ class TestModelState(ArrayTestCase):
         cloud_idx = grid.find_bin(np.log(const.rain_m))
         cloud_vector = np.zeros((nb,))
         cloud_vector[:cloud_idx] = 1.
-        actual = state.rain_prod_breakdown(ktens, cloud_vector)
+        actual = state.rain_prod_breakdown(ctens, cloud_vector)
         self.assertEqual(len(actual), 2)
         cloud_weight_vector = grid.moment_weight_vector(3, cloud_only=True)
         rain_weight_vector = grid.moment_weight_vector(3, rain_only=True)
-        cloud_inter = ktens.calc_rate(dsd_raw * cloud_vector, out_flux=True)
+        cloud_inter = ctens.calc_rate(dsd_raw * cloud_vector, out_flux=True)
         auto = np.dot(rain_weight_vector, cloud_inter[:nb]) + cloud_inter[nb]
         auto *= const.mass_conc_scale / const.time_scale
         self.assertAlmostEqual(actual[0] / auto, 1.)
-        total_inter = ktens.calc_rate(dsd_raw, out_flux=True)
+        total_inter = ctens.calc_rate(dsd_raw, out_flux=True)
         no_cloud_sc_or_auto = total_inter - cloud_inter
         accr = -np.dot(cloud_weight_vector, no_cloud_sc_or_auto[:nb])
         accr *= const.mass_conc_scale / const.time_scale
@@ -679,7 +679,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         desc = self.desc
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
                       DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
@@ -695,18 +695,18 @@ class TestModelState(ArrayTestCase):
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
         dsd_deriv_raw = np.zeros((3, nb+1))
-        dsd_deriv_raw[0,:] = state.dsd_time_deriv_raw([ktens])
+        dsd_deriv_raw[0,:] = state.dsd_time_deriv_raw([ctens])
         dsd_deriv_raw[1:,:] = desc.dsd_deriv_raw(raw, with_fallout=True)
         cloud_idx = grid.find_bin(np.log(const.rain_m))
         cloud_vector = np.zeros((nb,))
         cloud_vector[:cloud_idx] = 1.
-        actual, actual_deriv = state.rain_prod_breakdown(ktens, cloud_vector,
+        actual, actual_deriv = state.rain_prod_breakdown(ctens, cloud_vector,
                                                          derivative=True)
         self.assertEqual(len(actual), 2)
         self.assertEqual(actual_deriv.shape, (2, 3))
         cloud_weight_vector = grid.moment_weight_vector(3, cloud_only=True)
         rain_weight_vector = grid.moment_weight_vector(3, rain_only=True)
-        cloud_inter, cloud_deriv = ktens.calc_rate(dsd_raw * cloud_vector,
+        cloud_inter, cloud_deriv = ctens.calc_rate(dsd_raw * cloud_vector,
                                                    out_flux=True,
                                                    derivative=True)
         auto = np.dot(rain_weight_vector, cloud_inter[:nb]) + cloud_inter[nb]
@@ -725,7 +725,7 @@ class TestModelState(ArrayTestCase):
             auto_deriv[i+1] = dvar.nondimensional_to_si(auto_deriv[i+1])
         for i in range(3):
             self.assertAlmostEqual(actual_deriv[0,i] / auto_deriv[i], 1.)
-        total_inter, total_deriv = ktens.calc_rate(dsd_raw, out_flux=True,
+        total_inter, total_deriv = ctens.calc_rate(dsd_raw, out_flux=True,
                                                    derivative=True)
         no_cloud_sc_or_auto = total_inter - cloud_inter
         accr = -np.dot(cloud_weight_vector, no_cloud_sc_or_auto[:nb])
@@ -777,7 +777,7 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
                       DerivativeVar('nu')]
         nvar = 3
@@ -813,10 +813,10 @@ class TestModelState(ArrayTestCase):
                                  perturb_cov=perturb_cov_init)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens], perturb)
+        actual = state.time_derivative_raw([ctens], perturb)
         nchol = (nvar * (nvar + 1)) // 2
         expected = np.zeros((3*nb+3+nchol,))
-        expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
+        expected[:nb+1], rate_deriv = ctens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
         dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
@@ -875,7 +875,7 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
@@ -909,10 +909,10 @@ class TestModelState(ArrayTestCase):
                                  perturb_cov=perturb_cov_init)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        actual = state.time_derivative_raw([ktens], perturb)
+        actual = state.time_derivative_raw([ctens], perturb)
         nchol = (nvar * (nvar + 1)) // 2
         expected = np.zeros((2*nb+2+nchol,))
-        expected[:nb+1], rate_deriv = ktens.calc_rate(dsd_raw, derivative=True,
+        expected[:nb+1], rate_deriv = ctens.calc_rate(dsd_raw, derivative=True,
                                                       out_flux=True)
         dsd_scale = self.constants.mass_conc_scale
         deriv_plus_fallout = np.zeros((nb+1,))
@@ -979,7 +979,7 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
@@ -1013,13 +1013,13 @@ class TestModelState(ArrayTestCase):
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
         with self.assertRaises(ValueError):
-            actual = state.time_derivative_raw([ktens], perturb)
+            actual = state.time_derivative_raw([ctens], perturb)
 
     def test_zeta_cov(self):
         grid = self.grid
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
-        ktens = KernelTensor(self.grid, kernel=kernel)
+        ctens = CollisionTensor(self.grid, kernel=kernel)
         dvn = 2
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
                       DerivativeVar('nu')]
@@ -1052,7 +1052,7 @@ class TestModelState(ArrayTestCase):
                                  perturb_cov=perturb_cov_init)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
-        ddsddt_raw = state.dsd_time_deriv_raw([ktens])[:nb]
+        ddsddt_raw = state.dsd_time_deriv_raw([ctens])[:nb]
         actual = state.zeta_cov_raw(ddsddt_raw)
         lfs = np.zeros((pn,))
         lf_jac = np.zeros((pn, dvn+1))

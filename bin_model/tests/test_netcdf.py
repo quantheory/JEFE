@@ -15,7 +15,7 @@
 import unittest
 
 from bin_model import ModelConstants, LongKernel, HallKernel, \
-    GeometricMassGrid, KernelTensor, IdentityTransform, LogTransform, \
+    GeometricMassGrid, CollisionTensor, IdentityTransform, LogTransform, \
     QuadToLogTransform, DerivativeVar, PerturbedVar, ModelStateDescriptor, \
     ModelState, RK45Integrator, ForwardEulerIntegrator, RK4Integrator, \
     StochasticPerturbation
@@ -43,7 +43,7 @@ class TestNetcdfFile(ArrayTestCase):
                                       d_max=1.e-3,
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
-        self.ktens = KernelTensor(self.grid, kernel=self.kernel)
+        self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
                       DerivativeVar('nu')]
         nvar = 3
@@ -88,7 +88,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.integrator = RK45Integrator(self.constants, dt)
         self.fe_integrator = ForwardEulerIntegrator(self.constants, dt)
         self.rk4_integrator = RK4Integrator(self.constants, dt)
-        self.exp = Experiment(self.desc, self.ktens, self.integrator,
+        self.exp = Experiment(self.desc, self.ctens, self.integrator,
                               self.times, raws)
         self.dataset = nc4.Dataset('test.nc', 'w', diskless=True)
         self.NetcdfFile = NetcdfFile(self.dataset)
@@ -291,40 +291,40 @@ class TestNetcdfFile(ArrayTestCase):
         with self.assertRaises(RuntimeError):
             self.NetcdfFile.read_mass_grid(self.constants)
 
-    def test_ktens_io(self):
-        ktens = self.ktens
+    def test_ctens_io(self):
+        ctens = self.ctens
         self.NetcdfFile.write_mass_grid(self.grid)
-        self.NetcdfFile.write_kernel_tensor(ktens)
-        ktens2 = self.NetcdfFile.read_kernel_tensor(self.grid)
-        self.assertEqual(ktens2.boundary, ktens.boundary)
-        self.assertEqual(ktens2.data.shape, ktens.data.shape)
-        scale = ktens.data.max()
-        for i in range(len(ktens.data.flat)):
-            self.assertAlmostEqual(ktens2.data.flat[i] / scale,
-                                   ktens.data.flat[i] / scale)
+        self.NetcdfFile.write_collision_tensor(ctens)
+        ctens2 = self.NetcdfFile.read_collision_tensor(self.grid)
+        self.assertEqual(ctens2.boundary, ctens.boundary)
+        self.assertEqual(ctens2.data.shape, ctens.data.shape)
+        scale = ctens.data.max()
+        for i in range(len(ctens.data.flat)):
+            self.assertAlmostEqual(ctens2.data.flat[i] / scale,
+                                   ctens.data.flat[i] / scale)
 
     def test_cgk_io(self):
         const = self.constants
         kernel = self.kernel
         grid = self.grid
-        ktens = self.ktens
-        self.NetcdfFile.write_cgk(ktens)
-        const2, kernel2, grid2, ktens2 = self.NetcdfFile.read_cgk()
+        ctens = self.ctens
+        self.NetcdfFile.write_cgk(ctens)
+        const2, kernel2, grid2, ctens2 = self.NetcdfFile.read_cgk()
         self.assertEqual(const2.rho_water, const.rho_water)
         self.assertEqual(kernel2.kc, kernel.kc)
         self.assertEqual(grid2.d_min, grid.d_min)
-        self.assertEqual(ktens2.data.shape, ktens.data.shape)
-        scale = ktens.data.max()
-        for i in range(len(ktens.data.flat)):
-            self.assertAlmostEqual(ktens2.data.flat[i] / scale,
-                                   ktens.data.flat[i] / scale)
+        self.assertEqual(ctens2.data.shape, ctens.data.shape)
+        scale = ctens.data.max()
+        for i in range(len(ctens.data.flat)):
+            self.assertAlmostEqual(ctens2.data.flat[i] / scale,
+                                   ctens.data.flat[i] / scale)
 
     def test_desc_io(self):
         nb = self.grid.num_bins
         const = self.constants
         grid = self.grid
         desc = self.desc
-        self.NetcdfFile.write_cgk(self.ktens)
+        self.NetcdfFile.write_cgk(self.ctens)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
         self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
@@ -350,7 +350,7 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        self.NetcdfFile.write_cgk(self.ktens)
+        self.NetcdfFile.write_cgk(self.ctens)
         self.NetcdfFile.write_descriptor(desc)
         ttsl = self.NetcdfFile.read_dimension("transform_type_str_len")
         self.NetcdfFile.nc['perturbed_transform_types'][0,:] = \
@@ -362,7 +362,7 @@ class TestNetcdfFile(ArrayTestCase):
         nb = self.grid.num_bins
         const = self.constants
         grid = self.grid
-        self.NetcdfFile.write_cgk(self.ktens)
+        self.NetcdfFile.write_cgk(self.ctens)
         desc = ModelStateDescriptor(const, grid)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
@@ -405,11 +405,11 @@ class TestNetcdfFile(ArrayTestCase):
 
     def test_simple_experiment_io(self):
         desc = self.desc
-        ktens = self.ktens
+        ctens = self.ctens
         integrator = self.integrator
         exp = self.exp
         self.NetcdfFile.write_experiment(exp)
-        exp2 = self.NetcdfFile.read_experiment(desc, [ktens], integrator)
+        exp2 = self.NetcdfFile.read_experiment(desc, [ctens], integrator)
         num_step = len(exp.times) - 1
         self.assertEqual(len(exp2.times), num_step+1)
         for i in range(num_step+1):
@@ -424,14 +424,14 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        ktens = self.ktens
+        ctens = self.ctens
         integrator = self.integrator
         self.NetcdfFile.write_constants(const)
         self.NetcdfFile.write_mass_grid(grid)
-        exp = integrator.integrate(integrator.dt*2., self.state, [ktens],
+        exp = integrator.integrate(integrator.dt*2., self.state, [ctens],
                                    self.perturb)
         self.NetcdfFile.write_experiment(exp)
-        exp2 = self.NetcdfFile.read_experiment(desc, [ktens], integrator)
+        exp2 = self.NetcdfFile.read_experiment(desc, [ctens], integrator)
         num_step = len(exp.times) - 1
         self.assertEqual(len(exp2.times), num_step+1)
         for i in range(num_step+1):
@@ -454,17 +454,17 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        ktens = self.ktens
+        ctens = self.ctens
         integrator = self.integrator
-        exp = integrator.integrate(integrator.dt*2., self.state, [ktens],
+        exp = integrator.integrate(integrator.dt*2., self.state, [ctens],
                                    self.perturb)
         self.NetcdfFile.write_full_experiment(exp, ["k1.nc", "k2.nc"])
-        exp2 = self.NetcdfFile.read_full_experiment([ktens])
+        exp2 = self.NetcdfFile.read_full_experiment([ctens])
         files = self.NetcdfFile.read_characters('proc_tens_files')
         self.assertEqual(len(files), 2)
         self.assertEqual(files[0], "k1.nc")
         self.assertEqual(files[1], "k2.nc")
         self.assertEqual(exp2.desc.perturbed_num, exp.desc.perturbed_num)
-        self.assertIs(exp2.proc_tens[0], ktens)
+        self.assertIs(exp2.proc_tens[0], ctens)
         self.assertEqual(exp2.integrator.dt, exp.integrator.dt)
         self.assertEqual(exp2.num_time_steps, exp.num_time_steps)

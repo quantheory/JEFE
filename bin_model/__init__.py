@@ -19,7 +19,7 @@ from bin_model.descriptor import DerivativeVar, PerturbedVar, \
     ModelStateDescriptor
 from bin_model.experiment import Experiment
 from bin_model.kernel import Kernel, LongKernel, HallKernel
-from bin_model.kernel_tensor import KernelTensor
+from bin_model.collision_tensor import CollisionTensor
 from bin_model.mass_grid import MassGrid, GeometricMassGrid
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv

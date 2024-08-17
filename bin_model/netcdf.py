@@ -20,7 +20,7 @@ import netCDF4 as nc4
 from bin_model.constants import ModelConstants
 from bin_model.kernel import Kernel
 from bin_model.mass_grid import MassGrid
-from bin_model.kernel_tensor import KernelTensor
+from bin_model.collision_tensor import CollisionTensor
 from bin_model.descriptor import ModelStateDescriptor
 from bin_model.time import Integrator
 from bin_model.experiment import Experiment
@@ -182,46 +182,46 @@ class NetcdfFile:
         """
         return MassGrid.from_netcdf(self, constants)
 
-    def write_kernel_tensor(self, ktens):
-        """Write a KernelTensor object to a netCDF file."""
-        ktens.to_netcdf(self)
+    def write_collision_tensor(self, ctens):
+        """Write a CollisionTensor object to a netCDF file."""
+        ctens.to_netcdf(self)
 
-    def read_kernel_tensor(self, grid):
-        """Read a KernelTensor object from a netCDF file.
+    def read_collision_tensor(self, grid):
+        """Read a CollisionTensor object from a netCDF file.
 
         Arguments:
         grid - MassGrid object to use in constructing the MassGrid.
         """
-        return KernelTensor.from_netcdf(self, grid)
+        return CollisionTensor.from_netcdf(self, grid)
 
-    def write_cgk(self, ktens):
+    def write_cgk(self, ctens):
         """Write constants, grid, kernel, and tensor data to netCDF file.
 
         Arguments:
-        ktens - KernelTensor object created with the ModelConstants, MassGrid,
+        ctens - CollisionTensor object created with the ModelConstants, MassGrid,
                 and Kernel objects that are to be stored.
         """
-        self.write_constants(ktens.grid.constants)
-        self.write_kernel(ktens.kernel)
-        self.write_mass_grid(ktens.grid)
-        self.write_kernel_tensor(ktens)
+        self.write_constants(ctens.grid.constants)
+        self.write_kernel(ctens.kernel)
+        self.write_mass_grid(ctens.grid)
+        self.write_collision_tensor(ctens)
 
     def read_cgk(self):
         """Read constants, grid, kernel, and tensor data from netCDF file.
 
         Returns the tuple
 
-            (constants, kernel, grid, ktens)
+            (constants, kernel, grid, ctens)
 
         with types
 
-            (ModelConstants, Kernel, MassGrid, KernelTensor)
+            (ModelConstants, Kernel, MassGrid, CollisionTensor)
         """
         constants = self.read_constants()
         kernel = self.read_kernel(constants)
         grid = self.read_mass_grid(constants)
-        ktens = self.read_kernel_tensor(grid)
-        return constants, kernel, grid, ktens
+        ctens = self.read_collision_tensor(grid)
+        return constants, kernel, grid, ctens
 
     def write_descriptor(self, desc):
         """Write ModelStateDescriptor to netCDF file."""

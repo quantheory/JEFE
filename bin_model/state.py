@@ -361,11 +361,11 @@ class ModelState:
         perturb_cov_raw = desc.perturb_cov_raw(self.raw)
         return v_to_zeta @ perturb_cov_raw @ v_to_zeta.T
 
-    def rain_prod_breakdown(self, ktens, cloud_vector, derivative=None):
+    def rain_prod_breakdown(self, ctens, cloud_vector, derivative=None):
         """Calculate autoconversion and accretion rates.
 
         Arguments:
-        ktens - Collision KernelTensor.
+        ctens - CollisionTensor.
         cloud_vector - A vector of values between 0 and 1, representing the
                        percentage of mass in a bin that should be considered
                        cloud rather than rain.
@@ -385,7 +385,7 @@ class ModelState:
         nb = grid.num_bins
         m3_vector = grid.moment_weight_vector(3)
         dsd_raw = self.desc.dsd_raw(self.raw)
-        total_inter = ktens.calc_rate(dsd_raw, out_flux=True,
+        total_inter = ctens.calc_rate(dsd_raw, out_flux=True,
                                       derivative=derivative)
         if derivative:
             save_deriv = total_inter[1]
@@ -397,7 +397,7 @@ class ModelState:
                                                           with_fallout=True)
             total_deriv = save_deriv @ dsd_deriv_raw.T
         cloud_dsd_raw = dsd_raw * cloud_vector
-        cloud_inter = ktens.calc_rate(cloud_dsd_raw, out_flux=True,
+        cloud_inter = ctens.calc_rate(cloud_dsd_raw, out_flux=True,
                                       derivative=derivative)
         if derivative:
             cloud_dsd_deriv = np.transpose(dsd_deriv_raw).copy()
