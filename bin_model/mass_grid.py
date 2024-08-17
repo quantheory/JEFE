@@ -94,19 +94,19 @@ class MassGrid:
         return idx, num
 
     def construct_sparsity_structure(self, boundary=None):
-        """Find the sparsity structure of a kernel tensor using this grid.
+        """Find the sparsity structure of a collision tensor using this grid.
 
         Arguments:
         boundary (optional) - Either 'open' or 'closed'. Default is 'open'.
 
-        We represent the kernel as a tensor indexed by three bins:
+        We represent the collision kernel as a tensor indexed by three bins:
 
          1. The bin acting as a source of mass (labeled the "x" bin).
          2. A bin colliding with the source bin (the "y" bin).
          3. The destination bin that mass is added to (the "z" bin).
 
         For a given x and y bin, not every particle size can be produced; only
-        a small range of z bins will have nonzero kernel tensor. To represent
+        a small range of z bins will have nonzero collision tensor. To represent
         these ranges, the function returns a tuple `(idxs, nums, max_num)`:
 
          - idxs is an array of shape `(num_bins, num_bins)` that contains the

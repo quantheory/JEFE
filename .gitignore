@@ -128,8 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Kernel directory
-kernels/
+# Collision scheme input data directory
+collision_data/
 
 # Experiment directories
 convergence_experiments

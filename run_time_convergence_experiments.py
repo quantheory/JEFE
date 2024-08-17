@@ -11,8 +11,8 @@ import bin_model as bm
 
 os.makedirs('convergence_experiments', exist_ok=True)
 
-KERNEL_FILE_NAME = \
-    os.path.join("kernels", "Hall_ScottChen_kernel_nb168.nc")
+CTENS_FILE_NAME = \
+    os.path.join("collision_data", "Hall_ScottChen_ctens_nb168.nc")
 
 OUTPUT_FILE_NAME_TEMPLATE = \
     os.path.join("convergence_experiments",
@@ -30,9 +30,9 @@ END_TIME = 3600.
 MAX_TIME_STEP = 80.
 DTEXPS = list(range(5))
 
-with nc4.Dataset(KERNEL_FILE_NAME, "r") as nc:
+with nc4.Dataset(CTENS_FILE_NAME, "r") as nc:
     netcdf_file = bm.NetcdfFile(nc)
-    const, kernel, grid, ctens = netcdf_file.read_cgk()
+    const, ckern, grid, ctens = netcdf_file.read_ckgt()
 
 m3_init = INITIAL_MASS / (const.rho_water * np.pi/6.) # m^3 / kg 3rd moment
 m0_init = INITIAL_NC * 1.e6 * const.rho_air # kg^-1 number concentration
@@ -64,6 +64,6 @@ for integrator_name, integrator_type in integrator_types.items():
         output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(x, integrator_name)
         with nc4.Dataset(output_file_name, "w") as nc:
             netcdf_file = bm.NetcdfFile(nc)
-            netcdf_file.write_full_experiment(exp, [KERNEL_FILE_NAME])
+            netcdf_file.write_full_experiment(exp, [CTENS_FILE_NAME])
             netcdf_file.write_scalar('wall_time_taken', time_taken, 'f8', 's',
                                      "Time taken to run simulation")

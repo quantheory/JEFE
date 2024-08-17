@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-"""Classes for construction of kernels for use in JEFE's bin model."""
+"""Classes for construction of collision kernels for use in JEFE's bin model."""
 
 from abc import ABC, abstractmethod
 import enum
@@ -288,17 +288,17 @@ def get_y_bound_p(ly_bound, lz_bound, btypes):
     return y_bound_p
 
 
-class Kernel(ABC):
+class CollisionKernel(ABC):
     """
     Represent a collision kernel for the bin model.
     """
 
-    kernel_type_str_len = 32
-    """Length of kernel type string written to file."""
+    collision_kernel_type_str_len = 32
+    """Length of collision kernel type string written to file."""
 
     @abstractmethod
     def kernel_integral(self, lx_bound, y_bound_p, btype):
-        r"""Computes an integral necessary for constructing the kernel tensor.
+        r"""Computes an integral necessary for constructing the collision tensor.
 
         Arguments:
         lx_bound - Bounds for l_x. Abbreviated below as lxm, lxp.
@@ -335,20 +335,20 @@ class Kernel(ABC):
 
     @classmethod
     def from_netcdf(cls, netcdf_file, constants):
-        """Retrieve a Kernel object from a NetcdfFile."""
-        kernel_type = netcdf_file.read_characters('kernel_type')
-        if kernel_type == 'Long':
+        """Retrieve a CollisionKernel object from a NetcdfFile."""
+        ckern_type = netcdf_file.read_characters('collision_kernel_type')
+        if ckern_type == 'Long':
             kc = netcdf_file.read_scalar('kc')
             kr = netcdf_file.read_scalar('kr')
             rain_m = netcdf_file.read_scalar('rain_m')
             return LongKernel(constants, kc=kc, kr=kr, rain_m=rain_m)
-        if kernel_type == 'Hall':
+        if ckern_type == 'Hall':
             efficiency_name = netcdf_file.read_characters('efficiency_name')
             return HallKernel(constants, efficiency_name)
-        raise RuntimeError("unrecognized kernel_type in file")
+        raise RuntimeError("unrecognized collision_kernel_type in file")
 
 
-class LongKernel(Kernel):
+class LongKernel(CollisionKernel):
     """
     Implement the Long (1974) collision-coalescence kernel.
 
@@ -463,7 +463,7 @@ class LongKernel(Kernel):
         return self.kr * (upper - lower)
 
     def kernel_integral(self, lx_bound, y_bound_p, btype):
-        r"""Computes an integral necessary for constructing the kernel tensor.
+        r"""Computes an integral necessary for constructing the collision tensor.
 
         Arguments:
         lx_bound - Bounds for l_x. Abbreviated below as lxm, lxp.
@@ -525,12 +525,12 @@ class LongKernel(Kernel):
 
     def to_netcdf(self, netcdf_file):
         """Write internal state to netCDF file."""
-        netcdf_file.write_dimension('kernel_type_str_len',
-                                    self.kernel_type_str_len)
-        netcdf_file.write_characters('kernel_type',
+        netcdf_file.write_dimension('collision_kernel_type_str_len',
+                                    self.collision_kernel_type_str_len)
+        netcdf_file.write_characters('collision_kernel_type',
                                      'Long',
-                                     'kernel_type_str_len',
-                                     'Type of kernel')
+                                     'collision_kernel_type_str_len',
+                                     'Type of collision kernel')
         netcdf_file.write_scalar('kc', self.kc,
             'f8', 'm^3/s',
             "Semi-nondimensionalized Long kernel cloud parameter")
@@ -542,9 +542,9 @@ class LongKernel(Kernel):
             "Cloud-rain threshold mass")
 
 
-class HallKernel(Kernel):
+class HallKernel(CollisionKernel):
     """
-    Implement Hall-like kernel.
+    Implement Hall-like collision-coalescence kernel.
 
     Initialization arguments:
     constants - ModelConstants object for the model.
@@ -581,7 +581,7 @@ class HallKernel(Kernel):
         return self.kernel_d(d1, d2) / (x1 * x2)
 
     def kernel_integral(self, lx_bound, y_bound_p, btype):
-        r"""Computes an integral necessary for constructing the kernel tensor.
+        r"""Computes an integral necessary for constructing the collision tensor.
 
         Arguments:
         lx_bound - Bounds for l_x. Abbreviated below as lxm, lxp.
@@ -614,12 +614,12 @@ class HallKernel(Kernel):
 
     def to_netcdf(self, netcdf_file):
         """Write internal state to netCDF file."""
-        netcdf_file.write_dimension('kernel_type_str_len',
-                                    self.kernel_type_str_len)
-        netcdf_file.write_characters('kernel_type',
+        netcdf_file.write_dimension('collision_kernel_type_str_len',
+                                    self.collision_kernel_type_str_len)
+        netcdf_file.write_characters('collision_kernel_type',
                                      'Hall',
-                                     'kernel_type_str_len',
-                                     'Type of kernel')
+                                     'collision_kernel_type_str_len',
+                                     'Type of collision kernel')
         netcdf_file.write_dimension('efficiency_name_len',
                                     self.efficiency_name_len)
         netcdf_file.write_characters('efficiency_name',

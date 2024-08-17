@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-"""Class for the collision-coalescence kernel tensor in JEFE's bin model."""
+"""Class for the collision-coalescence tensor in JEFE's bin model."""
 
 import numpy as np
 
@@ -26,17 +26,17 @@ class CollisionTensor():
                           that are created larger than the largest bin size
                           "fall out" of the box. If 'closed', these particles
                           are placed in the largest bin. Defaults to 'open'.
-    kernel (optional) - A Kernel object representing the collision kernel.
-    data (optional) - Precalculated kernel tensor data.
+    ckern (optional) - A CollisionKernel object to discretize.
+    data (optional) - Precalculated collision tensor data.
 
-    Exactly one of the kernel or data arguments must be supplied.
+    Exactly one of the ckern or data arguments must be supplied.
     """
 
     boundary_str_len = 16
     """Length of string specifying boundary condition for largest bin."""
 
-    def __init__(self, grid, boundary=None, kernel=None, data=None):
-        self.kernel = kernel
+    def __init__(self, grid, boundary=None, ckern=None, data=None):
+        self.ckern = ckern
         self.grid = grid
         if boundary is None:
             boundary = 'open'
@@ -47,20 +47,20 @@ class CollisionTensor():
         self.nums = nums
         self.max_num = max_num
         if data is not None:
-            if kernel is not None:
-                raise RuntimeError("cannot supply both kernel and data to"
+            if ckern is not None:
+                raise RuntimeError("cannot supply both ckern and data to"
                                    " CollisionTensor constructor")
             self.data = data
             return
-        if kernel is None:
-            raise RuntimeError("must provide either kernel or data to"
+        if ckern is None:
+            raise RuntimeError("must provide either ckern or data to"
                                " construct a CollisionTensor")
-        integrals = self._calc_kernel_integrals(kernel)
+        integrals = self._calc_kernel_integrals(ckern)
         const = grid.constants
         scaling = const.mass_conc_scale * const.time_scale / const.std_mass
         self.data = scaling * integrals
 
-    def _calc_kernel_integrals(self, kernel):
+    def _calc_kernel_integrals(self, ckern):
         """Integrate kernel to get contributions to entries in self.data."""
         nb = self.grid.num_bins
         bb = self.grid.bin_bounds
@@ -80,7 +80,7 @@ class CollisionTensor():
                         top_bound = np.inf
                     else:
                         top_bound = bb[zidx+1]
-                    integrals[i,j,k] = kernel.integrate_over_bins(
+                    integrals[i,j,k] = ckern.integrate_over_bins(
                         (bb[i], bb[i+1]), (bb[j], bb[j+1]),
                         (bb[zidx], top_bound))
         return integrals
@@ -172,7 +172,7 @@ class CollisionTensor():
         return rate_deriv
 
     def to_netcdf(self, netcdf_file):
-        """Write kernel tensor data to netCDF file."""
+        """Write collision tensor data to netCDF file."""
         netcdf_file.write_dimension('boundary_str_len',
                                     self.boundary_str_len)
         netcdf_file.write_characters('boundary', self.boundary,
@@ -181,11 +181,11 @@ class CollisionTensor():
         netcdf_file.write_dimension('tensor_sparsity_dim', self.max_num)
         netcdf_file.write_array('collision_tensor_data', self.data,
             'f8', ('num_bins', 'num_bins', 'tensor_sparsity_dim'), '1',
-            'Nondimensionalized kernel tensor data')
+            'Nondimensionalized collision tensor data')
 
     @classmethod
     def from_netcdf(cls, netcdf_file, grid):
-        """Retrieve kernel tensor data from netCDF file."""
+        """Retrieve collision tensor data from netCDF file."""
         boundary = netcdf_file.read_characters('boundary')
         data = netcdf_file.read_array('collision_tensor_data')
         return CollisionTensor(grid, boundary=boundary, data=data)

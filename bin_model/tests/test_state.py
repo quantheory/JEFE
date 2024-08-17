@@ -409,8 +409,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -427,8 +427,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -445,8 +445,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -462,8 +462,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -480,8 +480,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -511,8 +511,8 @@ class TestModelState(ArrayTestCase):
     def test_time_derivative_raw_with_derivs(self):
         grid = self.grid
         nb = grid.num_bins
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
@@ -648,8 +648,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
         dsd = gamma_dist_d(grid, lam, nu)
@@ -678,8 +678,8 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         desc = self.desc
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
@@ -776,8 +776,8 @@ class TestModelState(ArrayTestCase):
     def test_time_derivative_raw_with_perturb_cov(self):
         grid = self.grid
         nb = grid.num_bins
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         nvar = 3
@@ -874,8 +874,8 @@ class TestModelState(ArrayTestCase):
     def test_time_derivative_raw_with_perturb_cov_and_correction(self):
         grid = self.grid
         nb = grid.num_bins
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
@@ -978,8 +978,8 @@ class TestModelState(ArrayTestCase):
         """Check correction_time required if perturb_num > deriv_var_num+1."""
         grid = self.grid
         nb = grid.num_bins
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
@@ -1018,8 +1018,8 @@ class TestModelState(ArrayTestCase):
     def test_zeta_cov(self):
         grid = self.grid
         nb = grid.num_bins
-        kernel = LongKernel(self.constants)
-        ctens = CollisionTensor(self.grid, kernel=kernel)
+        ckern = LongKernel(self.constants)
+        ctens = CollisionTensor(self.grid, ckern=ckern)
         dvn = 2
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]

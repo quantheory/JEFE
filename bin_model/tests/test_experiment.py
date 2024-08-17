@@ -44,8 +44,8 @@ class TestExperiment(ArrayTestCase):
                                       d_min=1.e-6,
                                       d_max=1.e-3,
                                       num_bins=nb)
-        self.kernel = LongKernel(self.constants)
-        self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        self.ckern = LongKernel(self.constants)
+        self.ctens = CollisionTensor(self.grid, ckern=self.ckern)
         dvn = 2
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
@@ -107,7 +107,7 @@ class TestExperiment(ArrayTestCase):
         exp = Experiment(self.desc, [self.ctens], self.integrator, times, raws)
         self.assertEqual(exp.constants.rho_air, self.constants.rho_air)
         self.assertEqual(exp.mass_grid.num_bins, self.grid.num_bins)
-        self.assertEqual(exp.proc_tens[0].kernel.kc, self.kernel.kc)
+        self.assertEqual(exp.proc_tens[0].ckern.kc, self.ckern.kc)
         self.assertEqual(exp.proc_tens[0].data.shape, self.ctens.data.shape)
         self.assertTrue(np.all(exp.proc_tens[0].data == self.ctens.data))
         self.assertEqual(exp.times.shape, (ntimes,))

@@ -34,7 +34,7 @@ class TestCollisionTensor(ArrayTestCase):
         self.scaling = self.constants.mass_conc_scale \
             * self.constants.time_scale \
             / self.constants.std_mass
-        self.kernel = LongKernel(self.constants)
+        self.ckern = LongKernel(self.constants)
         self.num_bins = 6
         self.grid = GeometricMassGrid(self.constants,
                                       d_min=1.e-6,
@@ -49,13 +49,13 @@ class TestCollisionTensor(ArrayTestCase):
     def test_ctens_init_raises_with_both_kernel_and_data(self):
         """Check CollisionTensor.__init__ raises with both kernel and data set."""
         with self.assertRaises(RuntimeError):
-            CollisionTensor(self.grid, kernel=self.kernel, data=np.zeros((2,2)))
+            CollisionTensor(self.grid, ckern=self.ckern, data=np.zeros((2,2)))
 
     def test_ctens_init(self):
         """Check data produced by CollisionTensor.__init__ with kernel input."""
         nb = self.num_bins
         bb = self.grid.bin_bounds
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         self.assertEqual(ctens.data.shape, (nb, nb, 2))
         # Check the following six cases:
         # 1. Two equal bins' output to the smallest nonzero output bin.
@@ -75,7 +75,7 @@ class TestCollisionTensor(ArrayTestCase):
             else:
                 lz_bound = (bb[z_idx], np.inf)
             k = z_idx - ctens.idxs[x_idx,y_idx]
-            expected = self.kernel.integrate_over_bins(lx_bound, ly_bound,
+            expected = self.ckern.integrate_over_bins(lx_bound, ly_bound,
                                                        lz_bound)
             self.assertAlmostEqual(ctens.data[x_idx,y_idx,k],
                                    expected * self.scaling)
@@ -88,24 +88,24 @@ class TestCollisionTensor(ArrayTestCase):
                                rain_d=1.e-4,
                                mass_conc_scale = 2.,
                                time_scale=3.)
-        kernel = LongKernel(const)
+        ckern = LongKernel(const)
         grid = GeometricMassGrid(const,
                                  d_min=1.e-6,
                                  d_max=2.e-6,
                                  num_bins=self.num_bins)
-        ctens = CollisionTensor(grid, kernel=kernel)
+        ctens = CollisionTensor(grid, ckern=ckern)
         const_noscale = ModelConstants(rho_water=1000.,
                                        rho_air=1.2,
                                        diameter_scale=1.e-4,
                                        rain_d=1.e-4,
                                        mass_conc_scale=1.,
                                        time_scale=1.)
-        kernel = LongKernel(const)
+        ckern = LongKernel(const)
         grid = GeometricMassGrid(const,
                                  d_min=1.e-6,
                                  d_max=2.e-6,
                                  num_bins=self.num_bins)
-        ctens_noscale = CollisionTensor(grid, kernel=kernel)
+        ctens_noscale = CollisionTensor(grid, ckern=ckern)
         self.assertArrayAlmostEqual(ctens.data,
                                     ctens_noscale.data
                                     * const_noscale.mass_conc_scale
@@ -114,13 +114,13 @@ class TestCollisionTensor(ArrayTestCase):
     def test_ctens_init_invalid_boundary_raises(self):
         """Check CollisionTensor.__init__ raises error for invalid boundary."""
         with self.assertRaises(ValueError):
-            CollisionTensor(self.grid, boundary='nonsense', kernel=self.kernel)
+            CollisionTensor(self.grid, boundary='nonsense', ckern=self.ckern)
 
     def test_ctens_init_boundary_closed(self):
         """Check CollisionTensor.__init__ with boundary=closed."""
         nb = self.num_bins
         bb = self.grid.bin_bounds
-        ctens = CollisionTensor(self.grid, boundary='closed', kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, boundary='closed', ckern=self.ckern)
         self.assertEqual(ctens.data.shape, (nb, nb, 2))
         # Check the following two cases:
         # 1. x and y are largest bin, output to largest bin.
@@ -136,7 +136,7 @@ class TestCollisionTensor(ArrayTestCase):
             else:
                 lz_bound = (bb[z_idx], np.inf)
             k = z_idx - ctens.idxs[x_idx,y_idx]
-            expected = self.kernel.integrate_over_bins(lx_bound, ly_bound,
+            expected = self.ckern.integrate_over_bins(lx_bound, ly_bound,
                                                        lz_bound)
             self.assertAlmostEqual(ctens.data[x_idx,y_idx,k],
                                    expected * self.scaling)
@@ -145,7 +145,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check CollisionTensor.calc_rate for lowest bin."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -162,7 +162,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check CollisionTensor.calc_rate for one of the middle bins."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -183,7 +183,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check CollisionTensor.calc_rate for top and out-of-range bin."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -213,7 +213,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check CollisionTensor.calc_rate conserves mass."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -226,7 +226,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check CollisionTensor.calc_rate with closed boundary."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ctens = CollisionTensor(self.grid, boundary='closed', kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, boundary='closed', ckern=self.ckern)
         f = np.linspace(1., nb, nb)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
@@ -269,7 +269,7 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_correct_sizes(self):
         """Check that CollisionTensor.calc_rate uses input vector size."""
         nb = self.num_bins
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+2, nb+2)
         with self.assertRaises(ValueError):
             ctens.calc_rate(f)
@@ -285,7 +285,7 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_no_closed_boundary_flux(self):
         """Check calc_rate produces no out-of-range mass for closed boundary."""
         nb = self.num_bins
-        ctens = CollisionTensor(self.grid, boundary='closed', kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, boundary='closed', ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(dfdt[-1], 0.)
@@ -293,7 +293,7 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_correct_shapes(self):
         """Check that CollisionTensor.calc_rate produces correct output shapes."""
         nb = self.num_bins
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         # Row vector.
@@ -326,7 +326,7 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_force_out_flux(self):
         """Check CollisionTensor.calc_rate affected by out_flux=True."""
         nb = self.num_bins
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         actual = ctens.calc_rate(f[:nb], out_flux=True)
         expected = ctens.calc_rate(f[:nb+1])
@@ -335,7 +335,7 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_force_no_out_flux(self):
         """Check CollisionTensor.calc_rate is affected by out_flux=False."""
         nb = self.num_bins
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         actual = ctens.calc_rate(f, out_flux=False)
         expected = ctens.calc_rate(f[:nb])
@@ -345,7 +345,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check derivative output of calc_rate."""
         nb = self.num_bins
         bw = self.grid.bin_widths
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(2., nb+1, nb+1)
         _, rate_deriv = ctens.calc_rate(f, derivative=True)
         self.assertEqual(rate_deriv.shape, (nb+1, nb+1))
@@ -391,7 +391,7 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_derivative_no_out_flux(self):
         """Check derivative output of calc_rate with out_flux=False."""
         nb = self.num_bins
-        ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(2., nb+1, nb+1)
         _, rate_deriv = ctens.calc_rate(f, derivative=True, out_flux=False)
         self.assertEqual(rate_deriv.shape, (nb, nb))

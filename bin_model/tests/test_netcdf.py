@@ -42,8 +42,8 @@ class TestNetcdfFile(ArrayTestCase):
                                       d_min=1.e-6,
                                       d_max=1.e-3,
                                       num_bins=nb)
-        self.kernel = LongKernel(self.constants)
-        self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        self.ckern = LongKernel(self.constants)
+        self.ctens = CollisionTensor(self.grid, ckern=self.ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         nvar = 3
@@ -240,28 +240,28 @@ class TestNetcdfFile(ArrayTestCase):
         self.assertEqual(const.time_scale, const2.time_scale)
 
     def test_long_kernel_io(self):
-        kernel = self.kernel
-        self.NetcdfFile.write_kernel(kernel)
-        kernel2 = self.NetcdfFile.read_kernel(self.constants)
-        self.assertEqual(kernel.kc, kernel2.kc)
-        self.assertEqual(kernel.kr, kernel2.kr)
-        self.assertEqual(kernel.log_rain_m, kernel2.log_rain_m)
+        ckern = self.ckern
+        self.NetcdfFile.write_collision_kernel(ckern)
+        ckern2 = self.NetcdfFile.read_collision_kernel(self.constants)
+        self.assertEqual(ckern.kc, ckern2.kc)
+        self.assertEqual(ckern.kr, ckern2.kr)
+        self.assertEqual(ckern.log_rain_m, ckern2.log_rain_m)
 
     def test_hall_kernel_io(self):
-        kernel = HallKernel(self.constants, 'ScottChen')
-        self.NetcdfFile.write_kernel(kernel)
-        kernel2 = self.NetcdfFile.read_kernel(self.constants)
-        self.assertEqual(kernel.efficiency_name, kernel2.efficiency_name)
+        ckern = HallKernel(self.constants, 'ScottChen')
+        self.NetcdfFile.write_collision_kernel(ckern)
+        ckern2 = self.NetcdfFile.read_collision_kernel(self.constants)
+        self.assertEqual(ckern.efficiency_name, ckern2.efficiency_name)
 
     def test_bad_kernel_type_raises(self):
-        self.NetcdfFile.write_dimension('kernel_type_str_len',
-                                        Kernel.kernel_type_str_len)
-        self.NetcdfFile.write_characters('kernel_type',
+        self.NetcdfFile.write_dimension('collision_kernel_type_str_len',
+                                        CollisionKernel.collision_kernel_type_str_len)
+        self.NetcdfFile.write_characters('collision_kernel_type',
                                          'nonsense',
-                                         'kernel_type_str_len',
-                                         'Type of kernel')
+                                         'collision_kernel_type_str_len',
+                                         'Type of collision kernel')
         with self.assertRaises(RuntimeError):
-            self.NetcdfFile.read_kernel(self.constants)
+            self.NetcdfFile.read_collision_kernel(self.constants)
 
     def test_geometric_mass_grid_io(self):
         grid = self.grid
@@ -303,15 +303,15 @@ class TestNetcdfFile(ArrayTestCase):
             self.assertAlmostEqual(ctens2.data.flat[i] / scale,
                                    ctens.data.flat[i] / scale)
 
-    def test_cgk_io(self):
+    def test_ckgt_io(self):
         const = self.constants
-        kernel = self.kernel
+        ckern = self.ckern
         grid = self.grid
         ctens = self.ctens
-        self.NetcdfFile.write_cgk(ctens)
-        const2, kernel2, grid2, ctens2 = self.NetcdfFile.read_cgk()
+        self.NetcdfFile.write_ckgt(ctens)
+        const2, ckern2, grid2, ctens2 = self.NetcdfFile.read_ckgt()
         self.assertEqual(const2.rho_water, const.rho_water)
-        self.assertEqual(kernel2.kc, kernel.kc)
+        self.assertEqual(ckern2.kc, ckern.kc)
         self.assertEqual(grid2.d_min, grid.d_min)
         self.assertEqual(ctens2.data.shape, ctens.data.shape)
         scale = ctens.data.max()
@@ -324,7 +324,7 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        self.NetcdfFile.write_cgk(self.ctens)
+        self.NetcdfFile.write_ckgt(self.ctens)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
         self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
@@ -350,7 +350,7 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        self.NetcdfFile.write_cgk(self.ctens)
+        self.NetcdfFile.write_ckgt(self.ctens)
         self.NetcdfFile.write_descriptor(desc)
         ttsl = self.NetcdfFile.read_dimension("transform_type_str_len")
         self.NetcdfFile.nc['perturbed_transform_types'][0,:] = \
@@ -362,7 +362,7 @@ class TestNetcdfFile(ArrayTestCase):
         nb = self.grid.num_bins
         const = self.constants
         grid = self.grid
-        self.NetcdfFile.write_cgk(self.ctens)
+        self.NetcdfFile.write_ckgt(self.ctens)
         desc = ModelStateDescriptor(const, grid)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)

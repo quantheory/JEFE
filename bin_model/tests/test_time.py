@@ -56,8 +56,8 @@ class IntegratorTestCase(ArrayTestCase):
                                       d_min=1.e-6,
                                       d_max=1.e-3,
                                       num_bins=nb)
-        self.kernel = LongKernel(self.constants)
-        self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
+        self.ckern = LongKernel(self.constants)
+        self.ctens = CollisionTensor(self.grid, ckern=self.ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         self.desc = ModelStateDescriptor(self.constants,
