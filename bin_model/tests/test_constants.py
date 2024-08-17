@@ -28,12 +28,12 @@ class TestModelConstants(unittest.TestCase):
         """Set up a ModelConstants object to check."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
 
     def test_diameter_to_scaled_mass(self):
         """Check conversion of a diameter to scaled mass variable."""
-        # Diameter of 10 microns with 100 micron std_diameter means that the
+        # Diameter of 10 microns with 100 micron diameter_scale means that the
         # scaled diameter is 1.e-1, so 1.e-3 for scaled mass.
         self.assertAlmostEqual(self.constants.diameter_to_scaled_mass(1.e-5),
                                1.e-3)
@@ -45,7 +45,7 @@ class TestModelConstants(unittest.TestCase):
                                1.e-5)
 
     def test_std_mass(self):
-        """Check conversion of std_diameter to std_mass."""
+        """Check conversion of diameter_scale to std_mass."""
         self.assertAlmostEqual(self.constants.std_mass,
                                self.constants.rho_water * np.pi/6. * 1.e-12)
 

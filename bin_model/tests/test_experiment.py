@@ -35,7 +35,7 @@ class TestExperiment(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
@@ -47,7 +47,7 @@ class TestExperiment(ArrayTestCase):
         self.kernel = LongKernel(self.constants)
         self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
         dvn = 2
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         pn = 3
         wv0 = self.grid.moment_weight_vector(0)

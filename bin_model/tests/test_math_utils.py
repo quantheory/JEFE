@@ -181,7 +181,7 @@ class TestGammaDistD(unittest.TestCase):
         """Set up a MassGrid on which to represent the gamma distribution."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
         self.grid = GeometricMassGrid(self.constants,
                                       d_min=1.e-6,

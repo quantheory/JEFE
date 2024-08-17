@@ -50,7 +50,7 @@ class ModelState:
         grid = self.mass_grid
         m3_dsd = self.dsd() / const.std_mass
         weight_vector = grid.moment_weight_vector(n, cloud_only, rain_only)
-        return const.std_diameter**(n) * np.dot(weight_vector, m3_dsd)
+        return const.diameter_scale**(n) * np.dot(weight_vector, m3_dsd)
 
     def fallout(self):
         """Return amount of third moment that has fallen out of the model."""

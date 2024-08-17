@@ -36,7 +36,7 @@ class TestModelState(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
@@ -513,7 +513,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ctens = CollisionTensor(self.grid, kernel=kernel)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
@@ -556,7 +556,7 @@ class TestModelState(ArrayTestCase):
         actual = state.linear_func_raw(weight_vector)
         expected = state.dsd_moment(3, cloud_only=True)
         expected *= const.std_mass \
-            / (const.std_diameter**3 * const.mass_conc_scale)
+            / (const.diameter_scale**3 * const.mass_conc_scale)
         self.assertAlmostEqual(actual / expected, 1.)
 
     def test_linear_func_raw_with_derivative(self):
@@ -577,7 +577,7 @@ class TestModelState(ArrayTestCase):
                                                      derivative=True)
         expected = state.dsd_moment(3, cloud_only=True)
         expected *= const.std_mass \
-            / (const.std_diameter**3 * const.mass_conc_scale)
+            / (const.diameter_scale**3 * const.mass_conc_scale)
         self.assertAlmostEqual(actual / expected, 1.)
         self.assertEqual(actual_deriv.shape, (2,))
         dsd_deriv_raw = desc.dsd_deriv_raw(state.raw)
@@ -605,7 +605,7 @@ class TestModelState(ArrayTestCase):
                                                      dfdt=dfdt)
         expected = state.dsd_moment(3, cloud_only=True)
         expected *= const.std_mass \
-            / (const.std_diameter**3 * const.mass_conc_scale)
+            / (const.diameter_scale**3 * const.mass_conc_scale)
         self.assertAlmostEqual(actual / expected, 1.)
         self.assertEqual(actual_deriv.shape, (3,))
         dsd_deriv_raw = np.zeros((3, nb))
@@ -680,7 +680,7 @@ class TestModelState(ArrayTestCase):
         desc = self.desc
         kernel = LongKernel(self.constants)
         ctens = CollisionTensor(self.grid, kernel=kernel)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         desc = ModelStateDescriptor(self.constants,
                                     self.grid,
@@ -778,7 +778,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ctens = CollisionTensor(self.grid, kernel=kernel)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
@@ -876,7 +876,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ctens = CollisionTensor(self.grid, kernel=kernel)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -980,7 +980,7 @@ class TestModelState(ArrayTestCase):
         nb = grid.num_bins
         kernel = LongKernel(self.constants)
         ctens = CollisionTensor(self.grid, kernel=kernel)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter)]
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale)]
         nvar = 3
         wv0 = grid.moment_weight_vector(0)
         wv6 = grid.moment_weight_vector(6)
@@ -1021,7 +1021,7 @@ class TestModelState(ArrayTestCase):
         kernel = LongKernel(self.constants)
         ctens = CollisionTensor(self.grid, kernel=kernel)
         dvn = 2
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         pn = 3
         wv0 = grid.moment_weight_vector(0)

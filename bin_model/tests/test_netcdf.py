@@ -33,7 +33,7 @@ class TestNetcdfFile(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
@@ -44,7 +44,7 @@ class TestNetcdfFile(ArrayTestCase):
                                       num_bins=nb)
         self.kernel = LongKernel(self.constants)
         self.ctens = CollisionTensor(self.grid, kernel=self.kernel)
-        deriv_vars = [DerivativeVar('lambda', 1./self.constants.std_diameter),
+        deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         nvar = 3
         wv0 = self.grid.moment_weight_vector(0)
@@ -234,7 +234,7 @@ class TestNetcdfFile(ArrayTestCase):
         const2 = self.NetcdfFile.read_constants()
         self.assertEqual(const.rho_water, const2.rho_water)
         self.assertEqual(const.rho_air, const2.rho_air)
-        self.assertEqual(const.std_diameter, const2.std_diameter)
+        self.assertEqual(const.diameter_scale, const2.diameter_scale)
         self.assertEqual(const.rain_d, const2.rain_d)
         self.assertEqual(const.mass_conc_scale, const2.mass_conc_scale)
         self.assertEqual(const.time_scale, const2.time_scale)

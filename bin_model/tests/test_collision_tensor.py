@@ -29,7 +29,7 @@ class TestCollisionTensor(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
         self.scaling = self.constants.mass_conc_scale \
             * self.constants.time_scale \
@@ -84,7 +84,7 @@ class TestCollisionTensor(ArrayTestCase):
         """Check application of dimension scalings in CollisionTensor.__init__."""
         const = ModelConstants(rho_water=1000.,
                                rho_air=1.2,
-                               std_diameter=1.e-4,
+                               diameter_scale=1.e-4,
                                rain_d=1.e-4,
                                mass_conc_scale = 2.,
                                time_scale=3.)
@@ -96,7 +96,7 @@ class TestCollisionTensor(ArrayTestCase):
         ctens = CollisionTensor(grid, kernel=kernel)
         const_noscale = ModelConstants(rho_water=1000.,
                                        rho_air=1.2,
-                                       std_diameter=1.e-4,
+                                       diameter_scale=1.e-4,
                                        rain_d=1.e-4,
                                        mass_conc_scale=1.,
                                        time_scale=1.)

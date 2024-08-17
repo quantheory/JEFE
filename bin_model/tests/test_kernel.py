@@ -40,7 +40,7 @@ class TestBeardV(unittest.TestCase):
         """Set up constants for evaluating beard_v."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
 
     def test_low_beard_v(self):
@@ -404,7 +404,7 @@ class TestLongKernelInit(unittest.TestCase):
         """Create a ModelConstants for testing LongKernel."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
 
     def test_fail_if_two_kcs(self):
@@ -482,7 +482,7 @@ class TestLongKernelInit(unittest.TestCase):
         # rain_m from ModelConstants (which was the original behavior).
         constants = ModelConstants(rho_water=1000.,
                                    rho_air=1.2,
-                                   std_diameter=1.e-4,
+                                   diameter_scale=1.e-4,
                                    rain_d=8.e-5)
         kernel = LongKernel(constants)
         # Original Long kernel value.
@@ -499,7 +499,7 @@ class TestLongKernel(unittest.TestCase):
         """Create a LongKernel for testing purposes."""
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
         self.kernel = LongKernel(self.constants)
 
@@ -828,7 +828,7 @@ class TestHallKernel(unittest.TestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)

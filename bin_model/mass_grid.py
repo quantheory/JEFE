@@ -176,7 +176,7 @@ class MassGrid:
         rain_only (optional) - Only count rain-sized drops.
 
         The returned value is a vector such that
-            std_diameter**n * np.dot(weight_vector, dsd) / self.std_mass
+            diameter_scale**n * np.dot(weight_vector, dsd) / self.std_mass
         is a moment of the DSD, or if the DSD is in dimensionless units,
             np.dot(weight_vector, dsd)
         is the dimensionless DSD.

@@ -24,7 +24,7 @@ class ModelConstants:
     Initialization arguments:
     rho_water - Density of water (kg/m^3).
     rho_air - Density of air (kg/m^3).
-    std_diameter - Diameter (m) of a particle of "typical" size, used
+    diameter_scale - Diameter (m) of a particle of "typical" size, used
                    internally to non-dimensionalize particle sizes.
     rain_d - Diameter (m) of threshold diameter defining the distinction
              between cloud and rain particles.
@@ -38,7 +38,7 @@ class ModelConstants:
     """
 
     # pylint: disable-next=too-many-arguments
-    def __init__(self, rho_water, rho_air, std_diameter, rain_d,
+    def __init__(self, rho_water, rho_air, diameter_scale, rain_d,
                  mass_conc_scale=None, time_scale=None):
         if mass_conc_scale is None:
             mass_conc_scale = 1.
@@ -46,8 +46,8 @@ class ModelConstants:
             time_scale = 1.
         self.rho_water = rho_water
         self.rho_air = rho_air
-        self.std_diameter = std_diameter
-        self.std_mass = rho_water * np.pi/6. * std_diameter**3
+        self.diameter_scale = diameter_scale
+        self.std_mass = rho_water * np.pi/6. * diameter_scale**3
         self.rain_d = rain_d
         self.rain_m = self.diameter_to_scaled_mass(rain_d)
         self.mass_conc_scale = mass_conc_scale
@@ -55,24 +55,24 @@ class ModelConstants:
 
     def diameter_to_scaled_mass(self, d):
         """Convert diameter in meters to non-dimensionalized particle size."""
-        return (d / self.std_diameter)**3
+        return (d / self.diameter_scale)**3
 
     def scaled_mass_to_diameter(self, x):
         """Convert non-dimensionalized particle size to diameter in meters."""
-        return self.std_diameter * x**(1./3.)
+        return self.diameter_scale * x**(1./3.)
 
     @classmethod
     def from_netcdf(cls, netcdf_file):
         """Retrieve a ModelConstants object from a NetcdfFile."""
         rho_water = netcdf_file.read_scalar('rho_water')
         rho_air = netcdf_file.read_scalar('rho_air')
-        std_diameter = netcdf_file.read_scalar('std_diameter')
+        diameter_scale = netcdf_file.read_scalar('diameter_scale')
         rain_d = netcdf_file.read_scalar('rain_d')
         mass_conc_scale = netcdf_file.read_scalar('mass_conc_scale')
         time_scale = netcdf_file.read_scalar('time_scale')
         return ModelConstants(rho_water=rho_water,
                               rho_air=rho_air,
-                              std_diameter=std_diameter,
+                              diameter_scale=diameter_scale,
                               rain_d=rain_d,
                               mass_conc_scale=mass_conc_scale,
                               time_scale=time_scale)
@@ -85,7 +85,7 @@ class ModelConstants:
         netcdf_file.write_scalar('rho_air', self.rho_air,
             'f8', "kg/m^3",
             "Density of air")
-        netcdf_file.write_scalar('std_diameter', self.std_diameter,
+        netcdf_file.write_scalar('diameter_scale', self.diameter_scale,
             'f8', "m",
             "Particle length scale used for nondimensionalization")
         netcdf_file.write_scalar('rain_d', self.rain_d,

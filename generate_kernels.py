@@ -22,17 +22,17 @@ D_MAX = 1.6384e-2 # Maximum particle diameter (m).
 BIN_NUMBERS = [42 * 2**i for i in range(7)]
 
 # Numerical tuning parameters.
-STD_DIAMETER = 1.e-4 # Internal scaling for particle size (m)
+DIAMETER_SCALE = 1.e-4 # Internal scaling for particle size (m)
 MASS_CONC_SCALE = 1.e-3 # Internal scaling for mass concentration (kg/m^3)
 # Long's kernel magnitude kc (m^3/kg^2/s)
 long_kernel_size = 9.44e9
 # Internal scaling for time (s)
-TIME_SCALE = 1. / (long_kernel_size * ((np.pi*RHO_WATER/6.)*STD_DIAMETER**3)
+TIME_SCALE = 1. / (long_kernel_size * ((np.pi*RHO_WATER/6.)*DIAMETER_SCALE**3)
                        * MASS_CONC_SCALE)
 
 FILE_NAME_TEMPLATE = os.path.join("kernels", "Hall_ScottChen_kernel_nb{}.nc")
 
-const = bm.ModelConstants(rho_water=RHO_WATER, rho_air=RHO_AIR, std_diameter=STD_DIAMETER,
+const = bm.ModelConstants(rho_water=RHO_WATER, rho_air=RHO_AIR, diameter_scale=DIAMETER_SCALE,
                           rain_d=RAIN_D, mass_conc_scale=MASS_CONC_SCALE,
                           time_scale=TIME_SCALE)
 

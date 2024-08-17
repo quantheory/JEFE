@@ -28,7 +28,7 @@ class TestMassGrid(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
         # This will put lx bin boundaries at 10^-6, 10^-5, ..., 10^3.
         self.geo_grid = GeometricMassGrid(self.constants,
@@ -193,7 +193,7 @@ class TestMomentWeightVector(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
         # Irregular grid spanning cloud/rain boundary.
         wv_bounds_d = [2.5e-5, 7.5e-5, 1.25e-4, 1.75e-4]
@@ -273,7 +273,7 @@ class TestGeometricMassGrid(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4)
         self.d_min = 1.e-6
         self.d_max = 1.e-3

@@ -30,7 +30,7 @@ class TestStochasticPerturbation(ArrayTestCase):
     def setUp(self):
         self.constants = ModelConstants(rho_water=1000.,
                                         rho_air=1.2,
-                                        std_diameter=1.e-4,
+                                        diameter_scale=1.e-4,
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
