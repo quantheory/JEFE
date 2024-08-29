@@ -211,14 +211,15 @@ class TestMomentWeightVector(ArrayTestCase):
     def test_moment_weight_vector_moment_3(self):
         """Check moment_weight_vector for 3rd moment."""
         actual = self.wv_grid.moment_weight_vector(3)
-        self.assertArrayAlmostEqual(actual, self.wv_grid.bin_widths)
+        self.assertArrayAlmostEqual(actual, np.ones((self.wv_grid.num_bins,)))
 
     def test_moment_weight_vector_moment_3_cloud_only(self):
         """Check moment_weight_vector for 3rd cloud moment."""
         actual = self.wv_grid.moment_weight_vector(3, cloud_only=True)
         expected = np.array([
-            self.wv_grid.bin_widths[0],
-            np.log(self.constants.rain_m) - self.wv_grid.bin_bounds[1],
+            1.,
+            (np.log(self.constants.rain_m) - self.wv_grid.bin_bounds[1])
+            / self.wv_grid.bin_widths[1],
             0.,
         ])
         self.assertArrayAlmostEqual(actual, expected)
@@ -228,8 +229,9 @@ class TestMomentWeightVector(ArrayTestCase):
         actual = self.wv_grid.moment_weight_vector(3, rain_only=True)
         expected = np.array([
             0.,
-            self.wv_grid.bin_bounds[2] - np.log(self.constants.rain_m),
-            self.wv_grid.bin_widths[2],
+            (self.wv_grid.bin_bounds[2] - np.log(self.constants.rain_m))
+            / self.wv_grid.bin_widths[1],
+            1.,
         ])
         self.assertArrayAlmostEqual(actual, expected)
 
@@ -237,17 +239,17 @@ class TestMomentWeightVector(ArrayTestCase):
         """Check moment_weight_vector for 0th moment."""
         actual = self.wv_grid.moment_weight_vector(0)
         exp_bb = np.exp(-self.wv_grid.bin_bounds)
-        expected = exp_bb[:-1] - exp_bb[1:]
+        expected = (exp_bb[:-1] - exp_bb[1:]) / self.wv_grid.bin_widths
         self.assertArrayAlmostEqual(actual, expected)
 
     def test_moment_weight_vector_moment_0_cloud_only(self):
         """Check moment_weight_vector for 0th cloud moment."""
         actual = self.wv_grid.moment_weight_vector(0, cloud_only=True)
         expected = np.array([
-            np.exp(-self.wv_grid.bin_bounds[0])
-            - np.exp(-self.wv_grid.bin_bounds[1]),
-            np.exp(-self.wv_grid.bin_bounds[1])
-            - 1./self.constants.rain_m,
+            (np.exp(-self.wv_grid.bin_bounds[0])
+            - np.exp(-self.wv_grid.bin_bounds[1])) / self.wv_grid.bin_widths[0],
+            (np.exp(-self.wv_grid.bin_bounds[1])
+            - 1./self.constants.rain_m) / self.wv_grid.bin_widths[1],
             0.,
         ])
         self.assertArrayAlmostEqual(actual, expected)
@@ -257,10 +259,10 @@ class TestMomentWeightVector(ArrayTestCase):
         actual = self.wv_grid.moment_weight_vector(0, rain_only=True)
         expected = np.array([
             0.,
-            1./self.constants.rain_m
-            - np.exp(-self.wv_grid.bin_bounds[2]),
-            np.exp(-self.wv_grid.bin_bounds[2])
-            - np.exp(-self.wv_grid.bin_bounds[3]),
+            (1./self.constants.rain_m
+            - np.exp(-self.wv_grid.bin_bounds[2])) / self.wv_grid.bin_widths[1],
+            (np.exp(-self.wv_grid.bin_bounds[2])
+            - np.exp(-self.wv_grid.bin_bounds[3])) / self.wv_grid.bin_widths[2],
         ])
         self.assertArrayAlmostEqual(actual, expected)
 

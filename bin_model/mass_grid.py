@@ -190,7 +190,7 @@ class MassGrid:
         bb = self.bin_bounds
         bw = self.bin_widths
         if n == 3:
-            weight_vector = bw.copy()
+            weight_vector = np.ones((self.num_bins,))
             if cloud_only:
                 weight_vector[self._rm_idx+1:] = 0.
                 weight_vector[self._rm_idx] *= \
@@ -202,17 +202,17 @@ class MassGrid:
         else:
             exponent = n / 3. - 1.
             weight_vector = np.exp(exponent * bb) / exponent
-            weight_vector = weight_vector[1:] - weight_vector[:-1]
+            weight_vector = (weight_vector[1:] - weight_vector[:-1]) / bw
             if cloud_only:
                 weight_vector[self._rm_idx+1:] = 0.
                 weight_vector[self._rm_idx] = \
-                    np.exp(exponent * self._lrm) / exponent \
-                    - np.exp(exponent * bb[self._rm_idx]) / exponent
+                    (np.exp(exponent * self._lrm) / exponent
+                     - np.exp(exponent * bb[self._rm_idx]) / exponent) / bw[self._rm_idx]
             elif rain_only:
                 weight_vector[:self._rm_idx] = 0.
                 weight_vector[self._rm_idx] = \
-                    np.exp(exponent * bb[self._rm_idx+1]) / exponent \
-                    - np.exp(exponent * self._lrm) / exponent
+                    (np.exp(exponent * bb[self._rm_idx+1]) / exponent \
+                     - np.exp(exponent * self._lrm) / exponent) / bw[self._rm_idx]
         return weight_vector
 
     def to_netcdf(self, netcdf_file):

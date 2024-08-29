@@ -159,7 +159,10 @@ class RK45Integrator(Integrator):
         raw_len = len(state.raw)
         rate_fun = lambda t, raw: \
             ModelState(state.desc, raw).time_derivative_raw(proc_tens, perturb)
+        nb = state.mass_grid.num_bins
         atol = 1.e-6 * np.ones(raw_len)
+        dsd_idx, _ = state.desc.dsd_loc()
+        atol[dsd_idx:dsd_idx+nb] = 1.e-6 * state.mass_grid.bin_widths
         pn = state.desc.perturbed_num
         pcidx, _ = state.desc.perturb_chol_loc()
         for i in range(pn):

@@ -40,8 +40,8 @@ lambda_init = ( m0_init * gamma(INITIAL_NU + 3)
     / (m3_init * gamma(INITIAL_NU)) )**(1./3.) # m^-1 scale parameter
 
 desc = bm.ModelStateDescriptor(const, grid)
-dsd = bm.gamma_dist_d(grid, lambda_init, INITIAL_NU)
-dsd *= INITIAL_MASS / np.dot(dsd, grid.bin_widths)
+dsd = bm.gamma_dist_d(grid.bin_bounds_d, lambda_init, INITIAL_NU)
+dsd *= INITIAL_MASS / np.sum(dsd)
 raw = desc.construct_raw(dsd)
 initial_state = bm.ModelState(desc, raw)
 

@@ -196,32 +196,33 @@ def _lower_gamma_deriv_high_x(s, x, l, atol, rtol):
             + (num_vec[2]/den_vec[2]) * (den_vec[3]/den_vec[2])
     return y
 
-def gamma_dist_d(grid, lam, nu):
+def gamma_dist_d(bin_bounds_d, lam, nu):
     """Convert a gamma distribution over diameter to a mass-weighted DSD.
 
     Arguments:
-    grid - The MassGrid used to discretize the distribution.
+    bin_bounds_d - The diameter bounds defining the mass grid.
     lam - The gamma distribution scale parameter.
     nu - The gamma distribution shape parameter.
 
-    The returned value is a simple 1-D Python array with length grid.num_bins.
-    Normalization is such that, over an infinite grid, integrating the result
-    (i.e. taking the dot product with grid.bin_widths) would yield 1. However,
-    if much of the gamma distribution mass is outside of the given grid, the
-    result would be somewhat less, so the user should check this.
+    The returned value is a simple 1-D Python array of size `len(bin_bounds_d)`.
+    This array contains a value proportional to the mass fraction in each bin,
+    normalized such that if the bins cover the whole range 0 to +infinity, the
+    sum of returned values would equal 1. If the bins don't cover this whole
+    range, then the sum will be less than 1, so it may be necessary to account
+    for this to ensure that the total mass is what is expected.
     """
-    gamma_integrals = gammainc(nu+3., lam*grid.bin_bounds_d)
-    return (gamma_integrals[1:] - gamma_integrals[:-1]) / grid.bin_widths
+    gamma_integrals = gammainc(nu+3., lam*bin_bounds_d)
+    return (gamma_integrals[1:] - gamma_integrals[:-1])
 
-def gamma_dist_d_lam_deriv(grid, lam, nu):
+def gamma_dist_d_lam_deriv(bin_bounds_d, lam, nu):
     """Derivative of gamma_dist_d with respect to lam."""
-    bbd = grid.bin_bounds_d
-    bin_func = bbd * (lam*bbd)**(nu+2) * np.exp(-lam*bbd) / gamma(nu+3)
-    return (bin_func[1:] - bin_func[:-1]) / grid.bin_widths
+    bin_func = bin_bounds_d * (lam*bin_bounds_d)**(nu+2) \
+        * np.exp(-lam*bin_bounds_d) / gamma(nu+3)
+    return (bin_func[1:] - bin_func[:-1])
 
-def gamma_dist_d_nu_deriv(grid, lam, nu):
+def gamma_dist_d_nu_deriv(bin_bounds_d, lam, nu):
     """Derivative of gamma_dist_d with respect to nu."""
     gnu3 = gamma(nu+3.)
-    bin_func = lower_gamma_deriv(nu+3., lam*grid.bin_bounds_d) / gnu3
-    bin_func -= gammainc(nu+3., lam*grid.bin_bounds_d) * digamma(nu+3.)
-    return (bin_func[1:] - bin_func[:-1]) / grid.bin_widths
+    bin_func = lower_gamma_deriv(nu+3., lam*bin_bounds_d) / gnu3
+    bin_func -= gammainc(nu+3., lam*bin_bounds_d) * digamma(nu+3.)
+    return (bin_func[1:] - bin_func[:-1])

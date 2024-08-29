@@ -126,11 +126,12 @@ class CollisionTensor():
         else:
             out_len = nb + 1 if out_flux else nb
             out_shape = (out_len,)
-        f = np.reshape(f, (f_len, 1))
-        rate = self._calc_rate(f, out_flux, out_len)
+        f_shaped = np.reshape(f.copy(), (f_len, 1))
+        f_shaped[:nb] /= np.reshape(self.grid.bin_widths, (nb, 1))
+        rate = self._calc_rate(f_shaped, out_flux, out_len)
         output = np.reshape(rate, out_shape)
         if derivative:
-            return output, self._calc_deriv(f, out_flux, out_len)
+            return output, self._calc_deriv(f_shaped, out_flux, out_len)
         return output
 
     def _calc_rate(self, f, out_flux, out_len):
@@ -148,7 +149,6 @@ class CollisionTensor():
                     rate[i] -= dfdt_term
                     if zidx < nb or out_flux:
                         rate[zidx] += dfdt_term
-        rate[:nb] /= self.grid.bin_widths
         return rate
 
     def _calc_deriv(self, f, out_flux, out_len):
@@ -167,8 +167,6 @@ class CollisionTensor():
                     if zidx < nb or out_flux:
                         rate_deriv[zidx,i] += deriv_i
                         rate_deriv[zidx,j] += deriv_j
-        for i in range(out_len):
-            rate_deriv[:nb,i] /= self.grid.bin_widths
         return rate_deriv
 
     def to_netcdf(self, netcdf_file):

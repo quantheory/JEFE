@@ -76,7 +76,7 @@ class TestModelState(ArrayTestCase):
         nu = 5.
         lam = nu / 1.e-5
         dsd = (np.pi/6. * self.constants.rho_water) \
-            * gamma_dist_d(grid, lam, nu)
+            * gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         state = ModelState(desc, raw)
         self.assertAlmostEqual(state.dsd_moment(3),
@@ -103,10 +103,9 @@ class TestModelState(ArrayTestCase):
         grid = self.grid
         desc = self.desc
         nb = grid.num_bins
-        bw = grid.bin_widths
         dsd = np.zeros((nb,))
-        dsd[0] = (np.pi/6. * self.constants.rho_water) / bw[0]
-        dsd[-1] = (np.pi/6. * self.constants.rho_water) / bw[-1]
+        dsd[0] = (np.pi/6. * self.constants.rho_water)
+        dsd[-1] = (np.pi/6. * self.constants.rho_water)
         raw = desc.construct_raw(dsd)
         state = ModelState(desc, raw)
         # Make sure that only half the mass is counted.
@@ -153,28 +152,27 @@ class TestModelState(ArrayTestCase):
                                  d_max=2.e-4,
                                  num_bins=nb)
         bb = grid.bin_bounds
-        bw = grid.bin_widths
         desc = ModelStateDescriptor(self.constants,
                                     grid)
-        dsd = (np.pi/6. * self.constants.rho_water) / bw
+        dsd = np.pi/6. * self.constants.rho_water * np.ones((nb,))
         raw = desc.construct_raw(dsd)
         state = ModelState(desc, raw)
         self.assertAlmostEqual(state.dsd_moment(3, cloud_only=True)
-                                   / state.dsd_moment(3),
+                               / state.dsd_moment(3),
                                0.5)
         self.assertAlmostEqual(state.dsd_moment(0, cloud_only=True)
-                                   / ((np.exp(-bb[0]) - (1./const.rain_m))
-                                      * dsd[0] / self.constants.std_mass),
+                               / ((np.exp(-bb[0]) - (1./const.rain_m))
+                                  * dsd[0] / (self.constants.std_mass
+                                              * (bb[1] - bb[0]))),
                                1.)
 
     def test_dsd_rain_moment(self):
         grid = self.grid
         desc = self.desc
         nb = grid.num_bins
-        bw = grid.bin_widths
         dsd = np.zeros((nb,))
-        dsd[0] = (np.pi/6. * self.constants.rho_water) / bw[0]
-        dsd[-1] = (np.pi/6. * self.constants.rho_water) / bw[-1]
+        dsd[0] = (np.pi/6. * self.constants.rho_water)
+        dsd[-1] = (np.pi/6. * self.constants.rho_water)
         raw = desc.construct_raw(dsd)
         state = ModelState(desc, raw)
         # Make sure that only half the mass is counted.
@@ -221,18 +219,18 @@ class TestModelState(ArrayTestCase):
                                  d_max=2.e-4,
                                  num_bins=nb)
         bb = grid.bin_bounds
-        bw = grid.bin_widths
         desc = ModelStateDescriptor(self.constants,
                                     grid)
-        dsd = (np.pi/6. * self.constants.rho_water) / bw
+        dsd = (np.pi/6. * self.constants.rho_water) * np.ones((nb,))
         raw = desc.construct_raw(dsd)
         state = ModelState(desc, raw)
         self.assertAlmostEqual(state.dsd_moment(3, rain_only=True)
-                                   / state.dsd_moment(3),
+                               / state.dsd_moment(3),
                                0.5)
         self.assertAlmostEqual(state.dsd_moment(0, rain_only=True)
-                                   / (((1./const.rain_m) - np.exp(-bb[1]))
-                                      * dsd[0] / self.constants.std_mass),
+                               / (((1./const.rain_m) - np.exp(-bb[1]))
+                                  * dsd[0] / (self.constants.std_mass
+                                              * (bb[1] - bb[0]))),
                                1.)
 
     def test_dsd_deriv_all(self):
@@ -413,7 +411,7 @@ class TestModelState(ArrayTestCase):
         ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -431,7 +429,7 @@ class TestModelState(ArrayTestCase):
         ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -449,7 +447,7 @@ class TestModelState(ArrayTestCase):
         ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -466,7 +464,7 @@ class TestModelState(ArrayTestCase):
         ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -484,7 +482,7 @@ class TestModelState(ArrayTestCase):
         ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -500,7 +498,7 @@ class TestModelState(ArrayTestCase):
         desc = self.desc
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         state = ModelState(desc, raw)
         actual = state.time_derivative_raw([])
@@ -520,10 +518,11 @@ class TestModelState(ArrayTestCase):
                                     deriv_vars=deriv_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        bbd = grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((2, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
                                   dsd_deriv[1,-4:].mean()])
         raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
@@ -652,7 +651,7 @@ class TestModelState(ArrayTestCase):
         ctens = CollisionTensor(self.grid, ckern=ckern)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -687,10 +686,10 @@ class TestModelState(ArrayTestCase):
                                     deriv_vars=deriv_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        dsd = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         dsd_deriv = np.zeros((2, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid.bin_bounds_d, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid.bin_bounds_d, lam, nu)
         raw = desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
         dsd_raw = desc.dsd_raw(raw)
         state = ModelState(desc, raw)
@@ -800,10 +799,11 @@ class TestModelState(ArrayTestCase):
                                     perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        bbd = grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((2, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
                                   dsd_deriv[1,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \
@@ -898,9 +898,10 @@ class TestModelState(ArrayTestCase):
                                     perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        bbd = grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((1, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \
             * (np.ones((nvar, nvar)) + np.eye(nvar))
@@ -1001,9 +1002,10 @@ class TestModelState(ArrayTestCase):
                                     perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        bbd = grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((1, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \
             * (np.ones((nvar, nvar)) + np.eye(nvar))
@@ -1039,10 +1041,11 @@ class TestModelState(ArrayTestCase):
                                     perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(grid, lam, nu)
+        bbd = grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((dvn, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
                                   dsd_deriv[1,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \

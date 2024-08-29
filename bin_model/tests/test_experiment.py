@@ -71,10 +71,11 @@ class TestExperiment(ArrayTestCase):
                                          perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(self.grid, lam, nu)
+        bbd = self.grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((dvn, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean(),
                                   dsd_deriv[1,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \
@@ -85,10 +86,10 @@ class TestExperiment(ArrayTestCase):
         self.state = ModelState(self.desc, self.raw)
         nu2 = 0.
         lam = nu / 5.e-5
-        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((dvn, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(bbd, lam, nu)
         self.raw2 = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv,
                                       fallout_deriv=fallout_deriv,
                                       perturb_cov=perturb_cov_init)

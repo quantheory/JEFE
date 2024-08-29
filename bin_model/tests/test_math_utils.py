@@ -196,7 +196,7 @@ class TestGammaDistD(unittest.TestCase):
         bwidth = grid.bin_widths
         nu = 5.
         lam = nu / 1.5e-6
-        actual = gamma_dist_d(grid, lam, nu)
+        actual = gamma_dist_d(grid.bin_bounds_d, lam, nu)
         self.assertEqual(len(actual), nbin)
         def gamma_test(x):
             """Gamma distribution for use in numerical quadrature."""
@@ -204,8 +204,7 @@ class TestGammaDistD(unittest.TestCase):
             return lam**(nu+3.) * x**(nu+2.) * np.exp(-lam*x) / gamma(nu+3)
         expected = np.zeros((nbin,))
         for i in range(nbin):
-            y, _ = quad(gamma_test, bbd[i], bbd[i+1])
-            expected[i] = y / bwidth[i]
+            expected[i], _ = quad(gamma_test, bbd[i], bbd[i+1])
         max_expected = np.abs(expected).max()
         for i in range(nbin):
             self.assertAlmostEqual(actual[i] / max_expected,
@@ -217,17 +216,17 @@ class TestGammaDistD(unittest.TestCase):
         Richardson extrapolation is used to obtain a second-order finite
         difference approximation.
         """
-        grid = self.grid
-        nbin = grid.num_bins
+        bbd = self.grid.bin_bounds_d
+        nbin = self.grid.num_bins
         nu = 5.
         lam = nu / 1.5e-6
-        actual = gamma_dist_d_lam_deriv(grid, lam, nu)
+        actual = gamma_dist_d_lam_deriv(bbd, lam, nu)
         self.assertEqual(len(actual), nbin)
         perturb = 1.
         # Finite difference + Richardson extrapolation.
-        expected = (4. * gamma_dist_d(grid, lam+perturb, nu)
-                    - gamma_dist_d(grid, lam+2.*perturb, nu)
-                    - 3. * gamma_dist_d(grid, lam, nu)) \
+        expected = (4. * gamma_dist_d(bbd, lam+perturb, nu)
+                    - gamma_dist_d(bbd, lam+2.*perturb, nu)
+                    - 3. * gamma_dist_d(bbd, lam, nu)) \
                         / (2.*perturb)
         max_expected = np.abs(expected).max()
         for i in range(nbin):
@@ -240,17 +239,17 @@ class TestGammaDistD(unittest.TestCase):
         Richardson extrapolation is used to obtain a second-order finite
         difference approximation.
         """
-        grid = self.grid
-        nbin = grid.num_bins
+        bbd = self.grid.bin_bounds_d
+        nbin = self.grid.num_bins
         nu = 5.
         lam = nu / 1.5e-6
-        actual = gamma_dist_d_nu_deriv(grid, lam, nu)
+        actual = gamma_dist_d_nu_deriv(bbd, lam, nu)
         self.assertEqual(len(actual), nbin)
         perturb = 1.e-6
         # Finite difference + Richardson extrapolation.
-        expected = (4. * gamma_dist_d(grid, lam, nu+perturb)
-                    - gamma_dist_d(grid, lam, nu+2.*perturb)
-                    - 3. * gamma_dist_d(grid, lam, nu)) \
+        expected = (4. * gamma_dist_d(bbd, lam, nu+perturb)
+                    - gamma_dist_d(bbd, lam, nu+2.*perturb)
+                    - 3. * gamma_dist_d(bbd, lam, nu)) \
                         / (2.*perturb)
         max_expected = np.abs(expected).max()
         for i in range(nbin):
@@ -263,17 +262,17 @@ class TestGammaDistD(unittest.TestCase):
         Richardson extrapolation is used to obtain a second-order finite
         difference approximation.
         """
-        grid = self.grid
-        nbin = grid.num_bins
+        bbd = self.grid.bin_bounds_d
+        nbin = self.grid.num_bins
         nu = 5.
         lam = nu / 1.5e-7
-        actual = gamma_dist_d_nu_deriv(grid, lam, nu)
+        actual = gamma_dist_d_nu_deriv(bbd, lam, nu)
         self.assertEqual(len(actual), nbin)
         perturb = 1.e-3
         # Finite difference + Richardson extrapolation.
-        expected = (4. * gamma_dist_d(grid, lam, nu+perturb)
-                    - gamma_dist_d(grid, lam, nu+2.*perturb)
-                    - 3. * gamma_dist_d(grid, lam, nu)) \
+        expected = (4. * gamma_dist_d(bbd, lam, nu+perturb)
+                    - gamma_dist_d(bbd, lam, nu+2.*perturb)
+                    - 3. * gamma_dist_d(bbd, lam, nu)) \
                         / (2.*perturb)
         max_expected = np.abs(expected).max()
         for i in range(nbin):

@@ -65,10 +65,11 @@ class IntegratorTestCase(ArrayTestCase):
                                          deriv_vars=deriv_vars)
         nu = 5.
         lam = nu / 1.e-4
-        dsd = gamma_dist_d(self.grid, lam, nu)
+        bbd = self.grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((2, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
-        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(self.grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
+        dsd_deriv[1,:] = gamma_dist_d_nu_deriv(bbd, lam, nu)
         self.raw = self.desc.construct_raw(dsd, dsd_deriv=dsd_deriv)
         self.state = ModelState(self.desc, self.raw)
         dvn = 1
@@ -94,9 +95,9 @@ class IntegratorTestCase(ArrayTestCase):
                                             perturbed_vars=perturbed_vars)
         nu = 5.
         lam = nu / 1.e-3
-        dsd = gamma_dist_d(self.grid, lam, nu)
+        dsd = gamma_dist_d(bbd, lam, nu)
         dsd_deriv = np.zeros((dvn, nb))
-        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(self.grid, lam, nu)
+        dsd_deriv[0,:] = gamma_dist_d_lam_deriv(bbd, lam, nu)
         fallout_deriv = np.array([dsd_deriv[0,-4:].mean()])
         perturb_cov_init = (10. / np.log(10.)) \
             * (np.ones((pn, pn)) + np.eye(pn))

@@ -144,28 +144,27 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_first_bin(self):
         """Check CollisionTensor.calc_rate for lowest bin."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
         ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
+        f[:nb] /= self.grid.bin_widths
         # Expected value in first bin.
         idx = 0
         expected_bot = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
                 expected_bot -= ctens.data[idx,i,j] * f[idx] * f[i]
-        expected_bot /= bw[idx]
         self.assertAlmostEqual(dfdt[0], expected_bot, places=15)
 
     def test_calc_rate_middle_bin(self):
         """Check CollisionTensor.calc_rate for one of the middle bins."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
         ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
+        f[:nb] /= self.grid.bin_widths
         # Expected value in fourth bin.
         idx = 3
         expected_middle = 0
@@ -176,17 +175,16 @@ class TestCollisionTensor(ArrayTestCase):
                 k_idx = idx - ctens.idxs[i,j]
                 if 0 <= k_idx < ctens.nums[i,j]:
                     expected_middle += ctens.data[i,j,k_idx] * f[i] * f[j]
-        expected_middle /= bw[idx]
         self.assertAlmostEqual(dfdt[3], expected_middle, places=15)
 
     def test_calc_rate_top_bins(self):
         """Check CollisionTensor.calc_rate for top and out-of-range bin."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
         ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
+        f[:nb] /= self.grid.bin_widths
         # Expected value in top bin.
         idx = 5
         expected_top = 0
@@ -197,7 +195,6 @@ class TestCollisionTensor(ArrayTestCase):
                 k_idx = idx - ctens.idxs[i,j]
                 if 0 <= k_idx < ctens.nums[i,j]:
                     expected_top += ctens.data[i,j,k_idx] * f[i] * f[j]
-        expected_top /= bw[idx]
         # Expected value in out-of-range bin.
         idx = 6
         expected_extra = 0
@@ -212,31 +209,26 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_conservation(self):
         """Check CollisionTensor.calc_rate conserves mass."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
         ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(1., nb+1, nb+1)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
-        mass_change = np.zeros((nb+1,))
-        mass_change[:nb] = dfdt[:nb] * bw
-        mass_change[-1] = dfdt[-1]
-        self.assertAlmostEqual(np.sum(mass_change/mass_change.max()), 0.)
+        self.assertAlmostEqual(np.sum(dfdt/dfdt.max()), 0.)
 
     def test_calc_rate_closed(self):
         """Check CollisionTensor.calc_rate with closed boundary."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
         ctens = CollisionTensor(self.grid, boundary='closed', ckern=self.ckern)
         f = np.linspace(1., nb, nb)
         dfdt = ctens.calc_rate(f)
         self.assertEqual(f.shape, dfdt.shape)
+        f /= self.grid.bin_widths
         # Expected value in first bin.
         idx = 0
         expected_bot = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
                 expected_bot -= ctens.data[idx,i,j] * f[idx] * f[i]
-        expected_bot /= bw[idx]
         # Expected value in fourth bin.
         idx = 3
         expected_middle = 0
@@ -249,7 +241,6 @@ class TestCollisionTensor(ArrayTestCase):
                 num = ctens.nums[i,j]
                 if 0 <= k_idx < num:
                     expected_middle += ctens.data[i,j,k_idx] * f[i] * f[j]
-        expected_middle /= bw[idx]
         # Expected value in top bin.
         idx = 5
         expected_top = 0
@@ -259,12 +250,10 @@ class TestCollisionTensor(ArrayTestCase):
                 num = ctens.nums[i,j]
                 if 0 <= k_idx < num:
                     expected_top += ctens.data[i,j,k_idx] * f[i] * f[j]
-        expected_top /= bw[idx]
-        self.assertAlmostEqual(dfdt[0], expected_bot, places=25)
-        self.assertAlmostEqual(dfdt[3], expected_middle, places=25)
-        self.assertAlmostEqual(dfdt[5], expected_top, places=25)
-        mass_change = dfdt * bw
-        self.assertAlmostEqual(np.sum(mass_change/mass_change.max()), 0.)
+        self.assertAlmostEqual(dfdt[0], expected_bot, places=18)
+        self.assertAlmostEqual(dfdt[3], expected_middle, places=17)
+        self.assertAlmostEqual(dfdt[5], expected_top, places=16)
+        self.assertAlmostEqual(np.sum(dfdt/dfdt.max()), 0.)
 
     def test_calc_rate_correct_sizes(self):
         """Check that CollisionTensor.calc_rate uses input vector size."""
@@ -323,6 +312,15 @@ class TestCollisionTensor(ArrayTestCase):
                                     np.reshape(dfdt, f_col.shape),
                                     places=25)
 
+    def test_calc_rate_does_not_change_f(self):
+        """Check that CollisionTensor.calc_rate doesn't change its input."""
+        nb = self.num_bins
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
+        f = np.linspace(1., nb+1, nb+1)
+        expected = f.copy()
+        ctens.calc_rate(f)
+        self.assertArrayEqual(f, expected)
+
     def test_calc_rate_force_out_flux(self):
         """Check CollisionTensor.calc_rate affected by out_flux=True."""
         nb = self.num_bins
@@ -344,10 +342,10 @@ class TestCollisionTensor(ArrayTestCase):
     def test_calc_rate_derivative(self):
         """Check derivative output of calc_rate."""
         nb = self.num_bins
-        bw = self.grid.bin_widths
         ctens = CollisionTensor(self.grid, ckern=self.ckern)
         f = np.linspace(2., nb+1, nb+1)
         _, rate_deriv = ctens.calc_rate(f, derivative=True)
+        f[:nb] /= self.grid.bin_widths
         self.assertEqual(rate_deriv.shape, (nb+1, nb+1))
         # First column, perturbation in lowest bin.
         idx = 0
@@ -365,7 +363,6 @@ class TestCollisionTensor(ArrayTestCase):
                 this_rate = ctens.data[i,idx,j] * f[i]
                 expected[i] -= this_rate
                 expected[ctens.idxs[i,idx] + j] += this_rate
-        expected[:nb] /= bw
         self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
         # Last column, perturbation in highest bin.
         idx = 5
@@ -383,7 +380,6 @@ class TestCollisionTensor(ArrayTestCase):
                 this_rate = ctens.data[i,idx,j] * f[i]
                 expected[i] -= this_rate
                 expected[ctens.idxs[i,idx] + j] += this_rate
-        expected[:nb] /= bw
         self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
         # Effect of perturbations to bottom bin should be 0.
         self.assertArrayEqual(rate_deriv[:,6], np.zeros((nb+1,)))
