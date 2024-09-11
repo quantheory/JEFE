@@ -107,7 +107,7 @@ class BoundType(enum.Flag):
 
     In this module, there are a number of integrals over the l_x and l_y
     coordinates, which are the natural logarithms of mass coordinates x and y,
-    respectively. Integration regions are decomposed in to pieces where the l_x
+    respectively. Integration regions are decomposed into pieces where the l_x
     (outer) integral has constant bounds, and boundaries over the l_y coordinate
     are either constants, or have the form:
 
