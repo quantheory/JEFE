@@ -6,7 +6,7 @@
 
 JEFE is:
 
-Copyright 2022 Sean Patrick Santos
+Copyright 2022-2024 Sean Patrick Santos
 
 The JEFE code is distributed under the Apache License, Version 2.0, a copy of
 which is provided in the LICENSE file and which can also be found at:
