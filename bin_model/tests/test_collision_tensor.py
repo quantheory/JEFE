@@ -56,7 +56,7 @@ class TestCollisionTensor(ArrayTestCase):
         nb = self.num_bins
         bb = self.grid.bin_bounds
         ctens = CollisionTensor(self.grid, ckern=self.ckern)
-        self.assertEqual(ctens.data.shape, (nb, nb, 2))
+        self.assertEqual(ctens.data.shape, (2, nb, nb))
         # Check the following six cases:
         # 1. Two equal bins' output to the smallest nonzero output bin.
         # 2. y > x, output to a larger output bin.
@@ -77,7 +77,7 @@ class TestCollisionTensor(ArrayTestCase):
             k = z_idx - ctens.idxs[x_idx,y_idx]
             expected = self.ckern.integrate_over_bins(lx_bound, ly_bound,
                                                        lz_bound)
-            self.assertAlmostEqual(ctens.data[x_idx,y_idx,k],
+            self.assertAlmostEqual(ctens.data[k,x_idx,y_idx],
                                    expected * self.scaling)
 
     def test_ctens_init_scaling(self):
@@ -121,7 +121,7 @@ class TestCollisionTensor(ArrayTestCase):
         nb = self.num_bins
         bb = self.grid.bin_bounds
         ctens = CollisionTensor(self.grid, boundary='closed', ckern=self.ckern)
-        self.assertEqual(ctens.data.shape, (nb, nb, 2))
+        self.assertEqual(ctens.data.shape, (2, nb, nb))
         # Check the following two cases:
         # 1. x and y are largest bin, output to largest bin.
         # 2. y is largest bin, output to largest bin.
@@ -138,7 +138,7 @@ class TestCollisionTensor(ArrayTestCase):
             k = z_idx - ctens.idxs[x_idx,y_idx]
             expected = self.ckern.integrate_over_bins(lx_bound, ly_bound,
                                                        lz_bound)
-            self.assertAlmostEqual(ctens.data[x_idx,y_idx,k],
+            self.assertAlmostEqual(ctens.data[k,x_idx,y_idx],
                                    expected * self.scaling)
 
     def test_calc_rate_first_bin(self):
@@ -154,7 +154,7 @@ class TestCollisionTensor(ArrayTestCase):
         expected_bot = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                expected_bot -= ctens.data[idx,i,j] * f[idx] * f[i]
+                expected_bot -= ctens.data[j,idx,i] * f[idx] * f[i]
         self.assertAlmostEqual(dfdt[0], expected_bot, places=15)
 
     def test_calc_rate_middle_bin(self):
@@ -170,11 +170,11 @@ class TestCollisionTensor(ArrayTestCase):
         expected_middle = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                expected_middle -= ctens.data[idx,i,j] * f[idx] * f[i]
+                expected_middle -= ctens.data[j,idx,i] * f[idx] * f[i]
             for j in range(nb):
                 k_idx = idx - ctens.idxs[i,j]
                 if 0 <= k_idx < ctens.nums[i,j]:
-                    expected_middle += ctens.data[i,j,k_idx] * f[i] * f[j]
+                    expected_middle += ctens.data[k_idx,i,j] * f[i] * f[j]
         self.assertAlmostEqual(dfdt[3], expected_middle, places=15)
 
     def test_calc_rate_top_bins(self):
@@ -190,11 +190,11 @@ class TestCollisionTensor(ArrayTestCase):
         expected_top = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                expected_top -= ctens.data[idx,i,j] * f[idx] * f[i]
+                expected_top -= ctens.data[j,idx,i] * f[idx] * f[i]
             for j in range(nb):
                 k_idx = idx - ctens.idxs[i,j]
                 if 0 <= k_idx < ctens.nums[i,j]:
-                    expected_top += ctens.data[i,j,k_idx] * f[i] * f[j]
+                    expected_top += ctens.data[k_idx,i,j] * f[i] * f[j]
         # Expected value in out-of-range bin.
         idx = 6
         expected_extra = 0
@@ -202,7 +202,7 @@ class TestCollisionTensor(ArrayTestCase):
             for j in range(nb):
                 k_idx = idx - ctens.idxs[i,j]
                 if 0 <= k_idx < ctens.nums[i,j]:
-                    expected_extra += ctens.data[i,j,k_idx] * f[i] * f[j]
+                    expected_extra += ctens.data[k_idx,i,j] * f[i] * f[j]
         self.assertAlmostEqual(dfdt[5], expected_top, places=15)
         self.assertAlmostEqual(dfdt[6], expected_extra, places=15)
 
@@ -228,19 +228,19 @@ class TestCollisionTensor(ArrayTestCase):
         expected_bot = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                expected_bot -= ctens.data[idx,i,j] * f[idx] * f[i]
+                expected_bot -= ctens.data[j,idx,i] * f[idx] * f[i]
         # Expected value in fourth bin.
         idx = 3
         expected_middle = 0
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                expected_middle -= ctens.data[idx,i,j] * f[idx] * f[i]
+                expected_middle -= ctens.data[j,idx,i] * f[idx] * f[i]
         for i in range(nb):
             for j in range(nb):
                 k_idx = idx - ctens.idxs[i,j]
                 num = ctens.nums[i,j]
                 if 0 <= k_idx < num:
-                    expected_middle += ctens.data[i,j,k_idx] * f[i] * f[j]
+                    expected_middle += ctens.data[k_idx,i,j] * f[i] * f[j]
         # Expected value in top bin.
         idx = 5
         expected_top = 0
@@ -249,7 +249,7 @@ class TestCollisionTensor(ArrayTestCase):
                 k_idx = idx - ctens.idxs[i,j]
                 num = ctens.nums[i,j]
                 if 0 <= k_idx < num:
-                    expected_top += ctens.data[i,j,k_idx] * f[i] * f[j]
+                    expected_top += ctens.data[k_idx,i,j] * f[i] * f[j]
         self.assertAlmostEqual(dfdt[0], expected_bot, places=18)
         self.assertAlmostEqual(dfdt[3], expected_middle, places=17)
         self.assertAlmostEqual(dfdt[5], expected_top, places=16)
@@ -353,14 +353,14 @@ class TestCollisionTensor(ArrayTestCase):
         # Effect of increased fluxes out of this bin.
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                this_rate = ctens.data[idx,i,j] * f[i]
+                this_rate = ctens.data[j,idx,i] * f[i]
                 expected[idx] -= this_rate
                 expected[ctens.idxs[idx,i] + j] += this_rate
         # Effect of increased transfer of mass out of other bins.
         # (Including this one; the double counting is correct.)
         for i in range(nb):
             for j in range(ctens.nums[i,idx]):
-                this_rate = ctens.data[i,idx,j] * f[i]
+                this_rate = ctens.data[j,i,idx] * f[i]
                 expected[i] -= this_rate
                 expected[ctens.idxs[i,idx] + j] += this_rate
         self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
@@ -370,14 +370,14 @@ class TestCollisionTensor(ArrayTestCase):
         # Effect of increased fluxes out of this bin.
         for i in range(nb):
             for j in range(ctens.nums[idx,i]):
-                this_rate = ctens.data[idx,i,j] * f[i]
+                this_rate = ctens.data[j,idx,i] * f[i]
                 expected[idx] -= this_rate
                 expected[ctens.idxs[idx,i] + j] += this_rate
         # Effect of increased transfer of mass out of other bins.
         # (Including this one; the double counting is correct.)
         for i in range(nb):
             for j in range(ctens.nums[i,idx]):
-                this_rate = ctens.data[i,idx,j] * f[i]
+                this_rate = ctens.data[j,i,idx] * f[i]
                 expected[i] -= this_rate
                 expected[ctens.idxs[i,idx] + j] += this_rate
         self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)

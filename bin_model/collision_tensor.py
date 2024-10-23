@@ -64,7 +64,7 @@ class CollisionTensor():
         """Integrate kernel to get contributions to entries in self.data."""
         nb = self.grid.num_bins
         bb = self.grid.bin_bounds
-        integrals = np.zeros((nb, nb, self.max_num))
+        integrals = np.zeros((self.max_num, nb, nb))
         # Largest bin for output is last in-range bin for closed boundary, but
         # is the out-of-range "bin" going to infinity for open boundary.
         if self.boundary == 'closed':
@@ -80,7 +80,7 @@ class CollisionTensor():
                         top_bound = np.inf
                     else:
                         top_bound = bb[zidx+1]
-                    integrals[i,j,k] = ckern.integrate_over_bins(
+                    integrals[k,i,j] = ckern.integrate_over_bins(
                         (bb[i], bb[i+1]), (bb[j], bb[j+1]),
                         (bb[zidx], top_bound))
         return integrals
@@ -137,37 +137,38 @@ class CollisionTensor():
     def _calc_rate(self, f, out_flux, out_len):
         """Do tensor contraction to calculate rate for calc_rate."""
         nb = self.grid.num_bins
-        f_outer = np.dot(f, np.transpose(f))
-        rate = np.zeros((out_len,))
-        for i in range(nb):
-            for j in range(nb):
-                idx = self.idxs[i,j]
-                fprod = f_outer[i,j]
-                for k in range(self.nums[i,j]):
-                    zidx = idx + k
-                    dfdt_term = fprod * self.data[i,j,k]
-                    rate[i] -= dfdt_term
-                    if zidx < nb or out_flux:
-                        rate[zidx] += dfdt_term
-        return rate
+        f_outer = np.dot(f[:nb], np.transpose(f[:nb]))
+        rate = np.zeros((out_len+self.max_num,))
+        for k in range(self.max_num):
+            dfdt_term = f_outer * self.data[k,:,:]
+            # Removal terms.
+            rate[:nb] -= np.sum(dfdt_term,axis=1)
+            # Production terms.
+            for i in range(nb):
+                for j in range(nb):
+                    zidx = self.idxs[i,j] + k
+                    rate[zidx] += dfdt_term[i,j]
+        if out_flux:
+            rate[out_len-1] = rate[out_len-1:].sum()
+        return rate[:out_len]
 
     def _calc_deriv(self, f, out_flux, out_len):
         """Calculate derivative for calc_rate."""
         nb = self.grid.num_bins
-        rate_deriv = np.zeros((out_len, out_len))
-        for i in range(nb):
-            for j in range(nb):
-                idx = self.idxs[i,j]
-                for k in range(self.nums[i,j]):
-                    zidx = idx + k
-                    deriv_i = self.data[i,j,k] * f[j]
-                    deriv_j = self.data[i,j,k] * f[i]
-                    rate_deriv[i,i] -= deriv_i
-                    rate_deriv[i,j] -= deriv_j
-                    if zidx < nb or out_flux:
-                        rate_deriv[zidx,i] += deriv_i
-                        rate_deriv[zidx,j] += deriv_j
-        return rate_deriv
+        rate_deriv = np.zeros((out_len+self.max_num, out_len))
+        for k in range(self.max_num):
+            for i in range(nb):
+                deriv_i = self.data[k,i,:nb] * f.flat[:nb]
+                deriv_j = self.data[k,i,:] * f[i]
+                rate_deriv[i,i] -= deriv_i.sum()
+                rate_deriv[i,:nb] -= deriv_j
+                for j in range(nb):
+                    zidx = self.idxs[i,j] + k
+                    rate_deriv[zidx,i] += deriv_i[j]
+                    rate_deriv[zidx,j] += deriv_j[j]
+        if out_flux:
+            rate_deriv[out_len-1,:] = rate_deriv[out_len-1:,:].sum(axis=0)
+        return rate_deriv[:out_len,:].copy() # Copy to make data contiguous.
 
     def to_netcdf(self, netcdf_file):
         """Write collision tensor data to netCDF file."""
@@ -178,7 +179,7 @@ class CollisionTensor():
                                      'Largest bin boundary condition')
         netcdf_file.write_dimension('tensor_sparsity_dim', self.max_num)
         netcdf_file.write_array('collision_tensor_data', self.data,
-            'f8', ('num_bins', 'num_bins', 'tensor_sparsity_dim'), '1',
+            'f8', ('tensor_sparsity_dim', 'num_bins', 'num_bins'), '1',
             'Nondimensionalized collision tensor data')
 
     @classmethod
