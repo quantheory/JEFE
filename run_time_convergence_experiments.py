@@ -11,8 +11,10 @@ import bin_model as bm
 
 os.makedirs('convergence_experiments', exist_ok=True)
 
+CTENS_TYPE = "Long"
+
 CTENS_FILE_NAME = \
-    os.path.join("collision_data", "Hall_ScottChen_ctens_nb168.nc")
+    os.path.join("collision_data", "{}_ctens_nb168.nc".format(CTENS_TYPE))
 
 OUTPUT_FILE_NAME_TEMPLATE = \
     os.path.join("convergence_experiments",
@@ -27,8 +29,8 @@ INITIAL_NU = 6. # Shape parameter for initial condition
 END_TIME = 3600.
 
 # i-th time step in seconds will be MAX_TIME_STEP * 2**(-DTEXPS[i])
-MAX_TIME_STEP = 80.
-DTEXPS = list(range(5))
+MAX_TIME_STEP = 512.
+DTEXPS = list(range(8))
 
 with nc4.Dataset(CTENS_FILE_NAME, "r") as nc:
     netcdf_file = bm.NetcdfFile(nc)
@@ -49,6 +51,7 @@ integrator_types = {
     'FE': bm.ForwardEulerIntegrator,
     'RK4': bm.RK4Integrator,
     'RK45': bm.RK45Integrator,
+    'Radau': bm.RadauIntegrator,
 }
 
 for integrator_name, integrator_type in integrator_types.items():

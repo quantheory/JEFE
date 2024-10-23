@@ -11,10 +11,11 @@ import bin_model as bm
 
 os.makedirs('convergence_experiments', exist_ok=True)
 
-BIN_NUMBERS = [42 * 2**i for i in range(5)]
+BIN_NUMBERS = [42 * 2**i for i in range(7)]
 
+CTENS_TYPE = "Long"
 CTENS_FILE_NAME_TEMPLATE = \
-    os.path.join("collision_data", "Hall_ScottChen_ctens_nb{}.nc")
+    os.path.join("collision_data", CTENS_TYPE+"_ctens_nb{}.nc")
 
 OUTPUT_FILE_NAME_TEMPLATE = \
     os.path.join("convergence_experiments",
