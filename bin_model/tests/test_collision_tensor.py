@@ -339,6 +339,22 @@ class TestCollisionTensor(ArrayTestCase):
         expected = ctens.calc_rate(f[:nb])
         self.assertArrayEqual(actual, expected)
 
+    def test_calc_rate_derivative_fd(self):
+        """Check derivative output of calc_rate against finite difference."""
+        nb = self.num_bins
+        ctens = CollisionTensor(self.grid, ckern=self.ckern)
+        f = np.linspace(2., nb+1, nb+1)
+        perturb_size = 1.e-7
+        rate, rate_deriv = ctens.calc_rate(f, derivative=True)
+        self.assertEqual(rate_deriv.shape, (nb+1, nb+1))
+        # First column, perturbation in lowest bin.
+        idx = 0
+        f2 = f.copy()
+        f2[idx] += perturb_size
+        rate2 = ctens.calc_rate(f2)
+        expected = (rate2 - rate) / perturb_size
+        self.assertArrayAlmostEqual(rate_deriv[:,0], expected)
+
     def test_calc_rate_derivative(self):
         """Check derivative output of calc_rate."""
         nb = self.num_bins
@@ -363,6 +379,7 @@ class TestCollisionTensor(ArrayTestCase):
                 this_rate = ctens.data[j,i,idx] * f[i]
                 expected[i] -= this_rate
                 expected[ctens.idxs[i,idx] + j] += this_rate
+        expected /= self.grid.bin_widths[idx]
         self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
         # Last column, perturbation in highest bin.
         idx = 5
@@ -380,6 +397,7 @@ class TestCollisionTensor(ArrayTestCase):
                 this_rate = ctens.data[j,i,idx] * f[i]
                 expected[i] -= this_rate
                 expected[ctens.idxs[i,idx] + j] += this_rate
+        expected /= self.grid.bin_widths[idx]
         self.assertArrayAlmostEqual(rate_deriv[:,idx], expected, places=15)
         # Effect of perturbations to bottom bin should be 0.
         self.assertArrayEqual(rate_deriv[:,6], np.zeros((nb+1,)))

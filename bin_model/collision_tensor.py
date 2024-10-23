@@ -131,7 +131,10 @@ class CollisionTensor():
         rate = self._calc_rate(f_shaped, out_flux, out_len)
         output = np.reshape(rate, out_shape)
         if derivative:
-            return output, self._calc_deriv(f_shaped, out_flux, out_len)
+            deriv = self._calc_deriv(f_shaped, out_flux, out_len)
+            for i in range(nb):
+                deriv[:,i] /= self.grid.bin_widths[i]
+            return output, deriv
         return output
 
     def _calc_rate(self, f, out_flux, out_len):
