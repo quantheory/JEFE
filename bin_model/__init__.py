@@ -14,6 +14,7 @@
 
 """A bin model with associated adjoint model used by JEFE."""
 
+from bin_model.basis import PiecewisePolyBasis
 from bin_model.constants import ModelConstants
 from bin_model.descriptor import DerivativeVar, PerturbedVar, \
     ModelStateDescriptor
