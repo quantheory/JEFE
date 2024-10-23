@@ -71,17 +71,17 @@ class CollisionTensor():
             high_bin = nb - 1
         else:
             high_bin = nb
-        for i in range(nb):
-            for j in range(nb):
-                idx = self.idxs[i,j]
-                for k in range(self.nums[i,j]):
-                    zidx = idx + k
+        for k in range(nb):
+            for l in range(nb):
+                idx = self.idxs[k,l]
+                for i in range(self.nums[k,l]):
+                    zidx = idx + i
                     if zidx == high_bin:
                         top_bound = np.inf
                     else:
                         top_bound = bb[zidx+1]
-                    integrals[k,i,j] = ckern.integrate_over_bins(
-                        (bb[i], bb[i+1]), (bb[j], bb[j+1]),
+                    integrals[i,k,l] = ckern.integrate_over_bins(
+                        (bb[k], bb[k+1]), (bb[l], bb[l+1]),
                         (bb[zidx], top_bound))
         return integrals
 
@@ -139,15 +139,15 @@ class CollisionTensor():
         nb = self.grid.num_bins
         f_outer = np.dot(f[:nb], np.transpose(f[:nb]))
         rate = np.zeros((out_len+self.max_num,))
-        for k in range(self.max_num):
-            dfdt_term = f_outer * self.data[k,:,:]
+        for i in range(self.max_num):
+            dfdt_term = f_outer * self.data[i,:,:]
             # Removal terms.
             rate[:nb] -= np.sum(dfdt_term,axis=1)
             # Production terms.
-            for i in range(nb):
-                for j in range(nb):
-                    zidx = self.idxs[i,j] + k
-                    rate[zidx] += dfdt_term[i,j]
+            for k in range(nb):
+                for l in range(nb):
+                    zidx = self.idxs[k,l] + i
+                    rate[zidx] += dfdt_term[k,l]
         if out_flux:
             rate[out_len-1] = rate[out_len-1:].sum()
         return rate[:out_len]
@@ -156,16 +156,16 @@ class CollisionTensor():
         """Calculate derivative for calc_rate."""
         nb = self.grid.num_bins
         rate_deriv = np.zeros((out_len+self.max_num, out_len))
-        for k in range(self.max_num):
-            for i in range(nb):
-                deriv_i = self.data[k,i,:nb] * f.flat[:nb]
-                deriv_j = self.data[k,i,:] * f[i]
-                rate_deriv[i,i] -= deriv_i.sum()
-                rate_deriv[i,:nb] -= deriv_j
-                for j in range(nb):
-                    zidx = self.idxs[i,j] + k
-                    rate_deriv[zidx,i] += deriv_i[j]
-                    rate_deriv[zidx,j] += deriv_j[j]
+        for i in range(self.max_num):
+            for k in range(nb):
+                deriv_k = self.data[i,k,:nb] * f.flat[:nb]
+                deriv_l = self.data[i,k,:] * f[k]
+                rate_deriv[k,k] -= deriv_k.sum()
+                rate_deriv[k,:nb] -= deriv_l
+                for l in range(nb):
+                    zidx = self.idxs[k,l] + i
+                    rate_deriv[zidx,k] += deriv_k[l]
+                    rate_deriv[zidx,l] += deriv_l[l]
         if out_flux:
             rate_deriv[out_len-1,:] = rate_deriv[out_len-1:,:].sum(axis=0)
         return rate_deriv[:out_len,:].copy() # Copy to make data contiguous.
