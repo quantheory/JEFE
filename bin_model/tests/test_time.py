@@ -322,3 +322,76 @@ class TestRadauIntegrator(ImplicitIntegratorTestCase):
             times, actual = integrator.integrate_raw(dt / tscale,
                                                      self.state,
                                                      [self.ctens])
+
+
+class TestBackwardEulerIntegrator(ImplicitIntegratorTestCase):
+    """
+    Test BackwardEulerIntegrator methods and attributes.
+    """
+    def test_integrate_raw(self):
+        tscale = self.constants.time_scale
+        dt = 0.1
+        num_step = 2
+        integrator = BackwardEulerIntegrator(self.constants, dt)
+        times, actual = integrator.integrate_raw(num_step*dt / tscale,
+                                                 self.no_deriv_state,
+                                                 [self.ctens])
+        expected = np.linspace(0., num_step*dt, num_step+1) / tscale
+        self.assertArrayAlmostEqual(times, expected)
+        self.assertEqual(actual.shape, (num_step+1, len(self.no_deriv_raw)))
+        expected = np.zeros((num_step+1, len(self.no_deriv_raw)))
+        dt_scaled = dt / tscale
+        expected[0,:] = self.no_deriv_raw
+        for i in range(num_step):
+            expect_state = ModelState(self.no_deriv_desc, actual[i+1,:])
+            expected[i+1,:] = expected[i,:] \
+                + dt_scaled*expect_state.time_derivative_raw([self.ctens])
+        scale = expected.max()
+        self.assertArrayAlmostEqual(actual / scale, expected / scale)
+
+    def test_integrate_raw_fails_with_deriv(self):
+        """Check that using implicit method with tangent linear model fails."""
+        tscale = self.constants.time_scale
+        dt = 1.e-5
+        integrator = BackwardEulerIntegrator(self.constants, dt)
+        with self.assertRaises(RuntimeError):
+            times, actual = integrator.integrate_raw(dt / tscale,
+                                                     self.state,
+                                                     [self.ctens])
+
+
+class TestDirk2Integrator(ImplicitIntegratorTestCase):
+    """
+    Test Dirk2Integrator methods and attributes.
+    """
+    def test_integrate_raw(self):
+        # This is a fairly weak test, simply checking that results are similar
+        # to forward Euler at small time steps.
+        tscale = self.constants.time_scale
+        dt = 1.e-5
+        num_step = 2
+        integrator = Dirk2Integrator(self.constants, dt)
+        times, actual = integrator.integrate_raw(num_step*dt / tscale,
+                                                 self.no_deriv_state,
+                                                 [self.ctens])
+        expected = np.linspace(0., num_step*dt, num_step+1) / tscale
+        self.assertArrayAlmostEqual(times, expected)
+        expected = np.zeros((num_step+1, len(self.no_deriv_raw)))
+        dt_scaled = dt / tscale
+        expected[0,:] = self.no_deriv_raw
+        for i in range(num_step):
+            expect_state = ModelState(self.no_deriv_desc, expected[i,:])
+            expected[i+1,:] = expected[i,:] \
+                + dt_scaled*expect_state.time_derivative_raw([self.ctens])
+        scale = expected.max()
+        self.assertArrayAlmostEqual(actual / scale, expected / scale)
+
+    def test_integrate_raw_fails_with_deriv(self):
+        """Check that using implicit method with tangent linear model fails."""
+        tscale = self.constants.time_scale
+        dt = 1.e-5
+        integrator = Dirk2Integrator(self.constants, dt)
+        with self.assertRaises(RuntimeError):
+            times, actual = integrator.integrate_raw(dt / tscale,
+                                                     self.state,
+                                                     [self.ctens])

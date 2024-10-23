@@ -52,6 +52,8 @@ integrator_types = {
     'RK4': bm.RK4Integrator,
     'RK45': bm.RK45Integrator,
     'Radau': bm.RadauIntegrator,
+    'BE': bm.BackwardEulerIntegrator,
+    'DIRK2': bm.Dirk2Integrator,
 }
 
 for integrator_name, integrator_type in integrator_types.items():
