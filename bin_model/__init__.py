@@ -27,6 +27,6 @@ from bin_model.netcdf import NetcdfFile
 from bin_model.perturbation import StochasticPerturbation
 from bin_model.state import ModelState
 from bin_model.time import Integrator, RK45Integrator, ForwardEulerIntegrator, \
-    RK4Integrator
+    RK4Integrator, RadauIntegrator
 from bin_model.transform import Transform, IdentityTransform, LogTransform, \
     QuadToLogTransform

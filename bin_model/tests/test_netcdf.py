@@ -18,7 +18,7 @@ from bin_model import ModelConstants, LongKernel, HallKernel, \
     GeometricMassGrid, CollisionTensor, IdentityTransform, LogTransform, \
     QuadToLogTransform, DerivativeVar, PerturbedVar, ModelStateDescriptor, \
     ModelState, RK45Integrator, ForwardEulerIntegrator, RK4Integrator, \
-    StochasticPerturbation
+    RadauIntegrator, StochasticPerturbation
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -89,6 +89,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.integrator = RK45Integrator(self.constants, dt)
         self.fe_integrator = ForwardEulerIntegrator(self.constants, dt)
         self.rk4_integrator = RK4Integrator(self.constants, dt)
+        self.radau_integrator = RadauIntegrator(self.constants, dt)
         self.exp = Experiment(self.desc, self.ctens, self.integrator,
                               self.times, raws)
         self.dataset = nc4.Dataset('test.nc', 'w', diskless=True)
@@ -392,6 +393,14 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_integrator(integrator)
         integrator2 = self.NetcdfFile.read_integrator(const)
         self.assertIsInstance(integrator2, RK4Integrator)
+        self.assertEqual(integrator.dt, integrator2.dt)
+
+    def test_radau_integrator_io(self):
+        const = self.constants
+        integrator = self.radau_integrator
+        self.NetcdfFile.write_integrator(integrator)
+        integrator2 = self.NetcdfFile.read_integrator(const)
+        self.assertIsInstance(integrator2, RadauIntegrator)
         self.assertEqual(integrator.dt, integrator2.dt)
 
     def test_bad_integrator_type_raises(self):

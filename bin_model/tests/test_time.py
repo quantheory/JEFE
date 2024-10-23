@@ -265,3 +265,60 @@ class TestRK4Integrator(IntegratorTestCase):
         for i in range(num_step+1):
             for j in range(len(self.raw)):
                 self.assertAlmostEqual(actual[i,j]/scale, expected[i,j]/scale)
+
+
+class ImplicitIntegratorTestCase(IntegratorTestCase):
+    """
+    Base class for integrators using implicit methods.
+
+    This class could be removed if the tangent linear model functionality was
+    made compatible with the implicit integrators.
+    """
+    def setUp(self):
+        super().setUp()
+        nb = 30
+        self.no_deriv_desc = ModelStateDescriptor(self.constants,
+                                                  self.grid)
+        nu = 5.
+        lam = nu / 1.e-4
+        bbd = self.grid.bin_bounds_d
+        dsd = gamma_dist_d(bbd, lam, nu)
+        self.no_deriv_raw = self.no_deriv_desc.construct_raw(dsd)
+        self.no_deriv_state = ModelState(self.no_deriv_desc, self.no_deriv_raw)
+
+
+class TestRadauIntegrator(ImplicitIntegratorTestCase):
+    """
+    Test RadauIntegrator methods and attributes.
+    """
+    def test_integrate_raw(self):
+        # This is a fairly weak test, simply checking that results are similar
+        # to forward Euler at small time steps.
+        tscale = self.constants.time_scale
+        dt = 1.e-5
+        num_step = 2
+        integrator = RadauIntegrator(self.constants, dt)
+        times, actual = integrator.integrate_raw(num_step*dt / tscale,
+                                                 self.no_deriv_state,
+                                                 [self.ctens])
+        expected = np.linspace(0., num_step*dt, num_step+1) / tscale
+        self.assertArrayAlmostEqual(times, expected)
+        expected = np.zeros((num_step+1, len(self.no_deriv_raw)))
+        dt_scaled = dt / tscale
+        expected[0,:] = self.no_deriv_raw
+        for i in range(num_step):
+            expect_state = ModelState(self.no_deriv_desc, expected[i,:])
+            expected[i+1,:] = expected[i,:] \
+                + dt_scaled*expect_state.time_derivative_raw([self.ctens])
+        scale = expected.max()
+        self.assertArrayAlmostEqual(actual / scale, expected / scale)
+
+    def test_integrate_raw_fails_with_deriv(self):
+        """Check that using implicit method with tangent linear model fails."""
+        tscale = self.constants.time_scale
+        dt = 1.e-5
+        integrator = RadauIntegrator(self.constants, dt)
+        with self.assertRaises(RuntimeError):
+            times, actual = integrator.integrate_raw(dt / tscale,
+                                                     self.state,
+                                                     [self.ctens])
