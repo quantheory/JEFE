@@ -21,6 +21,7 @@ import unittest
 from scipy.integrate import dblquad
 
 from bin_model.math_utils import add_logs, sub_logs, dilogarithm
+from bin_model.basis import PolynomialOnInterval
 from bin_model.constants import ModelConstants
 # pylint: disable-next=wildcard-import,unused-wildcard-import
 from bin_model.collision_kernel import *
@@ -595,7 +596,7 @@ class TestLongKernel(unittest.TestCase):
         lx_bound = (-1., 0.)
         y_bound_p = (-1., 0.)
         expected = ckern._integral_cloud(lx_bound, y_bound_p, btype=CNST)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=CNST, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_cloud_varying_btype(self):
@@ -609,7 +610,7 @@ class TestLongKernel(unittest.TestCase):
         lx_bound = (-1., 0.)
         y_bound_p = (add_logs(0., -2.), add_logs(0., -1.))
         expected = ckern._integral_cloud(lx_bound, y_bound_p, btype=BOVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=BOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_rain(self):
@@ -621,7 +622,7 @@ class TestLongKernel(unittest.TestCase):
         y_bound_ps = [(-1., 0.), (0., 1.), (0., 1.)]
         for lx_bound, y_bound_p in zip(lx_bounds, y_bound_ps):
             expected = ckern._integral_rain(lx_bound, y_bound_p, btype=CNST)
-            actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=CNST, deg_lx=0, deg_ly=0)
+            actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=CNST)
             self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_lx_spans_rain_m(self):
@@ -635,7 +636,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain((ckern.log_rain_m, lx_bound[1]),
                                   y_bound_p, btype=CNST)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=CNST, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_constant(self):
@@ -649,7 +650,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain(lx_bound, (ckern.log_rain_m, y_bound_p[1]),
                                   btype=CNST)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=CNST, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=CNST)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_lower_varies(self):
@@ -667,7 +668,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain(lx_bound, (ckern.log_rain_m, y_bound_p[1]),
                                   btype=CNST)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=LOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_lower_crossing(self):
@@ -686,7 +687,7 @@ class TestLongKernel(unittest.TestCase):
                                   btype=CNST)
         expected += \
             ckern._integral_rain((lx_bound[0], cross_x), y_bound_p, btype=LOVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=LOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=LOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_upper_varies(self):
@@ -704,7 +705,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain(lx_bound, (ckern.log_rain_m, y_bound_p[1]),
                                   btype=UPVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=UPVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_upper_crossing(self):
@@ -724,7 +725,7 @@ class TestLongKernel(unittest.TestCase):
             ckern._integral_rain((lx_bound[0], cross_x),
                                   (ckern.log_rain_m, y_bound_p[1]),
                                   btype=UPVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=UPVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=UPVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_both_vary(self):
@@ -742,7 +743,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain(lx_bound, (ckern.log_rain_m, y_bound_p[1]),
                                   btype=UPVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=BOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_lower_crossing_both_vary(self):
@@ -762,7 +763,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain((lx_bound[0], cross_x),
                                   y_bound_p, btype=BOVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=BOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_upper_crossing_both_vary(self):
@@ -781,7 +782,7 @@ class TestLongKernel(unittest.TestCase):
         expected += \
             ckern._integral_rain((lx_bound[0], cross_x),
                                   (ckern.log_rain_m, y_bound_p[1]), btype=UPVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=BOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_kernel_integral_ly_spans_rain_m_btype_3_both_crossing(self):
@@ -802,7 +803,7 @@ class TestLongKernel(unittest.TestCase):
                                   (ckern.log_rain_m, y_bound_p[1]), btype=UPVA)
         expected += \
             ckern._integral_rain((lx_bound[0], x_low), y_bound_p, btype=BOVA)
-        actual = ckern.kernel_integral(lx_bound, y_bound_p, btype=BOVA, deg_lx=0, deg_ly=0)
+        actual = ckern.kernel_integral_deg0(lx_bound, y_bound_p, btype=BOVA)
         self.assertAlmostEqual(actual, expected, places=20)
 
     def test_integrate_over_bins(self):
@@ -813,24 +814,42 @@ class TestLongKernel(unittest.TestCase):
         for regressions.
         """
         ckern = self.ckern
-        lx_bound = (-1., 0.)
-        ly_bound = (-1., 0.)
+        basis_x = PolynomialOnInterval(-1., 0., 0)
+        basis_y = PolynomialOnInterval(-1., 0., 0)
         lz_bound = (0., 1.)
-        actual = ckern.integrate_over_bins(lx_bound, ly_bound, lz_bound)
+        actual = ckern.integrate_over_bins(basis_x, basis_y, lz_bound)
         expected = 3.1444320613930285e-09
         self.assertAlmostEqual(actual, expected, places=20)
+
+    def test_kernel_integral_degree_0(self):
+        """Check kernel_integral vs. kernel_integral_deg0."""
+        lx_bound = (-2.5, -2.)
+        y_bound_p = (-1., 0.)
+        basis_x = PolynomialOnInterval(lx_bound[0], lx_bound[1], 0)
+        basis_y = PolynomialOnInterval(y_bound_p[0], y_bound_p[1], 0)
+        actual = self.ckern.kernel_integral(basis_x, basis_y, lx_bound, y_bound_p, CNST)
+        expected = self.ckern.kernel_integral_deg0(lx_bound, y_bound_p, CNST)
+        self.assertEqual(actual, expected)
 
     def test_kernel_integral_higher_degree(self):
         """Check kernel_integral vs. numerical integration for higher degree."""
         lx_bound = (-2.5, -2.)
         y_bound_p = (-1., 0.)
+        deg_lx = 1
+        deg_ly = 2
         lx0 = -2.5
         ly0 = -1.
+        scale_x = 1.8
+        scale_y = 0.7
+        basis_x = PolynomialOnInterval(lx_bound[0], lx_bound[1], deg_lx,
+                                       root=lx0, scale=scale_x)
+        basis_y = PolynomialOnInterval(y_bound_p[0], y_bound_p[1], deg_ly,
+                                       root=ly0, scale=scale_y)
         def f(ly, lx):
-            return (lx-lx0) * (ly-ly0)**2 * self.ckern.kernel_x(np.exp(lx), np.exp(ly)) * np.exp(-ly)
-        actual = self.ckern.kernel_integral(lx_bound, y_bound_p, CNST,
-                                            deg_lx=1, deg_ly=2, lx0=lx0, ly0=ly0)
+            return (lx-lx0)**deg_lx * (ly-ly0)**deg_ly * self.ckern.kernel_x(np.exp(lx), np.exp(ly)) * np.exp(-ly)
+        actual = self.ckern.kernel_integral(basis_x, basis_y, lx_bound, y_bound_p, CNST)
         expected, _ = dblquad(f, lx_bound[0], lx_bound[1], y_bound_p[0], y_bound_p[1])
+        expected *= scale_x * scale_y
         self.assertAlmostEqual(actual / expected, 1.)
 
 
@@ -882,6 +901,8 @@ class TestHallKernel(unittest.TestCase):
         """Check kernel_integral vs. numerical integration, for all btypes."""
         lx_bound = (-2.5, -2.)
         y_bound_p = (-1., 0.)
+        basis_x = PolynomialOnInterval(lx_bound[0], lx_bound[1], 0)
+        basis_y = PolynomialOnInterval(-10., 10., 0)
         def f(ly, lx):
             return self.ckern.kernel_x(np.exp(lx), np.exp(ly)) * np.exp(-ly)
         def g(lx):
@@ -892,7 +913,7 @@ class TestHallKernel(unittest.TestCase):
         gs = [y_bound_p[0], g, y_bound_p[0], g]
         hs = [y_bound_p[1], y_bound_p[1], h, h]
         for btype, g, h in zip(btypes, gs, hs):
-            actual = self.ckern.kernel_integral(lx_bound, y_bound_p, btype, deg_lx=0, deg_ly=0)
+            actual = self.ckern.kernel_integral(basis_x, basis_y, lx_bound, y_bound_p, btype)
             expected, _ = dblquad(f, lx_bound[0], lx_bound[1], g, h)
             self.assertAlmostEqual(actual / expected, 1.)
 
@@ -900,29 +921,28 @@ class TestHallKernel(unittest.TestCase):
         """Check kernel_integral vs. numerical integration for higher degree."""
         lx_bound = (-2.5, -2.)
         y_bound_p = (-1., 0.)
+        deg_lx = 1
+        deg_ly = 2
         lx0 = -2.5
         ly0 = -1.
+        scale_x = 1.8
+        scale_y = 0.7
+        basis_x = PolynomialOnInterval(lx_bound[0], lx_bound[1], deg_lx,
+                                       root=lx0, scale=scale_x)
+        basis_y = PolynomialOnInterval(y_bound_p[0], y_bound_p[1], deg_ly,
+                                       root=ly0, scale=scale_y)
         def f(ly, lx):
-            return (lx-lx0) * (ly-ly0)**2 * self.ckern.kernel_x(np.exp(lx), np.exp(ly)) * np.exp(-ly)
-        actual = self.ckern.kernel_integral(lx_bound, y_bound_p, CNST,
-                                            deg_lx=1, deg_ly=2, lx0=lx0, ly0=ly0)
+            return (lx-lx0)**deg_lx * (ly-ly0)**deg_ly * self.ckern.kernel_x(np.exp(lx), np.exp(ly)) * np.exp(-ly)
+        actual = self.ckern.kernel_integral(basis_x, basis_y, lx_bound, y_bound_p, CNST)
         expected, _ = dblquad(f, lx_bound[0], lx_bound[1], y_bound_p[0], y_bound_p[1])
+        expected *= scale_x * scale_y
         self.assertAlmostEqual(actual / expected, 1.)
 
-    def test_kernel_integral_higher_degree_fails_without_lx0_ly0(self):
-        """Check that higher degree integrals require lx0 and/or ly0."""
-        lx_bound = (-2.5, -2.)
-        y_bound_p = (-1., 0.)
-        with self.assertRaises(ValueError):
-            actual = self.ckern.kernel_integral(lx_bound, y_bound_p, CNST,
-                                                deg_lx=1, deg_ly=0, ly0=0.)
-        with self.assertRaises(ValueError):
-            actual = self.ckern.kernel_integral(lx_bound, y_bound_p, CNST,
-                                                deg_lx=0, deg_ly=1, lx0=0.)
-
     def test_kernel_integral_skips_close_x_bounds(self):
-        """Check kernel_integral returns 0 for extremely narrow bins."""
+        """Check kernel_integral returns 0 for extremely narrow x ranges."""
         lx1 = -3.
         lx2 = lx1 + 1.e-14
-        actual = self.ckern.kernel_integral((lx1, lx2), (-1., 0.), btype=CNST, deg_lx=0, deg_ly=0)
+        basis_x = PolynomialOnInterval(-20., 20., 0)
+        basis_y = PolynomialOnInterval(-20., 20., 0)
+        actual = self.ckern.kernel_integral(basis_x, basis_y, (lx1, lx2), (-1., 0.), btype=CNST)
         self.assertEqual(actual, 0.)

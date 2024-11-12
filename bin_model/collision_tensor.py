@@ -16,6 +16,8 @@
 
 import numpy as np
 
+from bin_model.basis import PolynomialOnInterval
+
 class CollisionTensor():
     """
     Represent a collision kernel evaluated on a particular mass grid.
@@ -72,7 +74,9 @@ class CollisionTensor():
         else:
             high_bin = nb
         for k in range(nb):
+            basis_x = PolynomialOnInterval(bb[k], bb[k+1], 0)
             for l in range(nb):
+                basis_y = PolynomialOnInterval(bb[l], bb[l+1], 0)
                 idx = self.idxs[k,l]
                 for i in range(self.nums[k,l]):
                     zidx = idx + i
@@ -81,8 +85,7 @@ class CollisionTensor():
                     else:
                         top_bound = bb[zidx+1]
                     integrals[i,k,l] = ckern.integrate_over_bins(
-                        (bb[k], bb[k+1]), (bb[l], bb[l+1]),
-                        (bb[zidx], top_bound))
+                        basis_x, basis_y, (bb[zidx], top_bound))
         return integrals
 
     def calc_rate(self, f, out_flux=None, derivative=False):

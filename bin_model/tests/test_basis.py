@@ -14,10 +14,102 @@
 
 import unittest
 
-from bin_model import ModelConstants, GeometricMassGrid, PiecewisePolyBasis
+from bin_model import ModelConstants, GeometricMassGrid
 # pylint: disable-next=wildcard-import,unused-wildcard-import
-from bin_model.netcdf import *
+from bin_model.basis import *
 from .array_assert import ArrayTestCase
+
+
+class TestPolynomialOnInterval(ArrayTestCase):
+    """
+    Test PolynomialOnInterval objects.
+    """
+    def test_root_of_constant_raises(self):
+        """Test defining root of a constant basis function raises an error."""
+        lower_bound = 2.
+        upper_bound = 5.
+        degree = 0
+        root = 3.
+        with self.assertRaises(RuntimeError):
+            poi = PolynomialOnInterval(lower_bound, upper_bound, degree, root)
+
+    def test_constant_on_interval(self):
+        """Test constant basis function over an interval."""
+        lower_bound = 2.
+        upper_bound = 5.
+        degree = 0
+        poi = PolynomialOnInterval(lower_bound, upper_bound, degree)
+        self.assertEqual(poi.lower_bound, lower_bound)
+        self.assertEqual(poi.upper_bound, upper_bound)
+        self.assertEqual(poi.degree, degree)
+        self.assertIsNone(poi.root)
+        self.assertEqual(poi.scale, 1.)
+        inputs = np.array((1., 2., 3., 4., 5., 6.))
+        expected = np.array((0., 1., 1., 1., 1., 0.))
+        actual = np.array([poi(x) for x in inputs])
+        self.assertArrayEqual(actual, expected)
+
+    def test_constant_on_interval_with_scale(self):
+        """Test constant basis function over an interval."""
+        lower_bound = 2.
+        upper_bound = 5.
+        degree = 0
+        scale = 2.
+        poi = PolynomialOnInterval(lower_bound, upper_bound, degree,
+                                   scale=scale)
+        self.assertEqual(poi.lower_bound, lower_bound)
+        self.assertEqual(poi.upper_bound, upper_bound)
+        self.assertEqual(poi.degree, degree)
+        self.assertIsNone(poi.root)
+        self.assertEqual(poi.scale, scale)
+        inputs = np.array((1., 2., 3., 4., 5., 6.))
+        expected = np.array((0., 1., 1., 1., 1., 0.)) * scale
+        actual = np.array([poi(x) for x in inputs])
+        self.assertArrayEqual(actual, expected)
+
+    def test_no_root_of_poly_raises(self):
+        """Test that a non-constant polynomial requires supplying a root."""
+        lower_bound = 2.
+        upper_bound = 5.
+        degree = 3
+        with self.assertRaises(RuntimeError):
+            poi = PolynomialOnInterval(lower_bound, upper_bound, degree)
+
+    def test_poly_on_interval(self):
+        """Test non-constant polynomial basis function over an interval."""
+        lower_bound = 2.
+        upper_bound = 5.
+        degree = 3
+        root = 3.
+        poi = PolynomialOnInterval(lower_bound, upper_bound, degree, root)
+        self.assertEqual(poi.lower_bound, lower_bound)
+        self.assertEqual(poi.upper_bound, upper_bound)
+        self.assertEqual(poi.degree, degree)
+        self.assertEqual(poi.root, root)
+        self.assertEqual(poi.scale, 1.)
+        inputs = np.array((1., 2., 3., 4., 5., 6.))
+        expected = np.array((0., -1., 0., 1., 8., 0.))
+        actual = np.array([poi(x) for x in inputs])
+        self.assertArrayEqual(actual, expected)
+
+    def test_poly_on_interval_with_scale(self):
+        """Test non-constant polynomial basis function with scaling amount."""
+        lower_bound = 2.
+        upper_bound = 5.
+        degree = 3
+        root = 3.
+        scale = 2.
+        poi = PolynomialOnInterval(lower_bound, upper_bound, degree, root,
+                                   scale=scale)
+        self.assertEqual(poi.lower_bound, lower_bound)
+        self.assertEqual(poi.upper_bound, upper_bound)
+        self.assertEqual(poi.degree, degree)
+        self.assertEqual(poi.root, root)
+        self.assertEqual(poi.scale, scale)
+        inputs = np.array((1., 2., 3., 4., 5., 6.))
+        expected = np.array((0., -1., 0., 1., 8., 0.)) * scale
+        actual = np.array([poi(x) for x in inputs])
+        self.assertArrayEqual(actual, expected)
 
 
 class TestPiecewisePolyBasis(ArrayTestCase):
@@ -37,17 +129,18 @@ class TestPiecewisePolyBasis(ArrayTestCase):
 
     def _check_basis_for_degree(self, basis, degree):
         bb = self.grid.bin_bounds
-        for i in range(self.num_bins):
+        nb = self.num_bins
+        for i in range(nb):
             # Check that inputs below/above the bin bounds are zero.
-            self.assertEqual(basis[i][degree](bb[0] - 1.), 0.)
-            self.assertEqual(basis[i][degree](bb[-1] + 1.), 0.)
+            self.assertEqual(basis[nb*degree+i](bb[0] - 1.), 0.)
+            self.assertEqual(basis[nb*degree+i](bb[-1] + 1.), 0.)
             # Values in the middle of the relevant bin are 0.5 to the power of
             # the degree, and zero elsewhere.
             for k in range(self.num_bins):
                 if k != i:
-                    self.assertEqual(basis[i][degree](0.5*(bb[k]+bb[k+1])), 0.)
+                    self.assertEqual(basis[nb*degree+i](0.5*(bb[k]+bb[k+1])), 0.)
                 else:
-                    self.assertAlmostEqual(basis[i][degree](0.5*(bb[k]+bb[k+1])),
+                    self.assertAlmostEqual(basis[nb*degree+i](0.5*(bb[k]+bb[k+1])),
                                            0.5**degree)
 
     def test_piecewise_constant(self):

@@ -300,27 +300,20 @@ class CollisionKernel(ABC):
     def kernel_x(self, x, y):
         """Calculate kernel function as a function of log scaled mass."""
 
-    def kernel_integral(self, lx_bound, y_bound_p, btype, deg_lx, deg_ly,
-                        lx0=None, ly0=None):
+    def kernel_integral(self, basis_x, basis_y, lx_bound, y_bound_p, btype):
         r"""Computes an integral necessary for constructing the collision tensor.
 
         Arguments:
+        basis_x, basis_y - The x and y basis functions to integrate over.
         lx_bound - Bounds for l_x. Abbreviated below as lxm, lxp.
         y_bound_p - Bound parameters for l_y. Abbreviated below as (a, b).
         btype - Boundary type for y integrals.
-        deg_lx, deg_ly - Degree of polynomials for lx and ly basis functions.
-        lx0, ly0 (optional) - Assumed sole zero for lx and ly basis functions.
-                              Can be omitted for degree zero functions.
 
         If K_f is the scaled kernel function, this returns:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y)
-          (l_x-lx0)**deg_lx (l_y-ly0)**deg_ly dl_y dl_x
+          basis_x(l_x) basis_y(l_y) dl_y dl_x
         """
-        if lx0 is None and deg_lx != 0:
-            raise ValueError("must set lx0 if deg_lx > 0")
-        if ly0 is None and deg_ly != 0:
-            raise ValueError("must set ly0 if deg_ly > 0")
         tol = 1.e-12
         # For efficiency and stability, refuse to bother with extremely
         # small ranges of particle sizes.
@@ -329,12 +322,7 @@ class CollisionKernel(ABC):
         def f(ly, lx):
             x = np.exp(lx)
             y = np.exp(ly)
-            kernel = self.kernel_x(x, y) / y
-            if deg_lx > 0:
-                kernel *= (lx-lx0)**deg_lx
-            if deg_ly > 0:
-                kernel *= (ly-ly0)**deg_ly
-            return kernel
+            return basis_x(lx) * basis_y(ly) * self.kernel_x(x, y) / y
         if btype.lower_varies():
             def g(lx):
                 return sub_logs(y_bound_p[0], lx)
@@ -348,24 +336,26 @@ class CollisionKernel(ABC):
         y, _ = dblquad(f, lx_bound[0], lx_bound[1], g, h)
         return y
 
-    def integrate_over_bins(self, lx_bound, ly_bound, lz_bound):
+    def integrate_over_bins(self, basis_x, basis_y, lz_bound):
         """Integrate kernel over a relevant domain given x, y, and z bins.
 
         Arguments:
-        lx_bound - Bounds for x bin (source bin).
-        ly_bound - Bounds for y bin (colliding bin).
+        basis_x - Basis function for x bin (source bin).
+        basis_y - Basis function for y bin (colliding bin).
         lz_bound - Bounds for z bin (destination bin).
 
         This returns the value of the mass-weighted kernel integrated over the
         region where the values of `(lx, ly)` are in the given bins, and where
         collisions produce masses in the z bin.
         """
+        lx_bound = (basis_x.lower_bound, basis_x.upper_bound)
+        ly_bound = (basis_y.lower_bound, basis_y.upper_bound)
         lxs, btypes = get_lxs_and_btypes(lx_bound, ly_bound, lz_bound)
         y_bound_p = get_y_bound_p(ly_bound, lz_bound, btypes)
         output = 0.
         for i, btype in enumerate(btypes):
-            output += self.kernel_integral(lxs[i:i+2], y_bound_p[i,:], btype,
-                                           0, 0)
+            output += self.kernel_integral(basis_x, basis_y, lxs[i:i+2],
+                                           y_bound_p[i,:], btype)
         return output
 
     @abstractmethod
@@ -508,27 +498,23 @@ class LongKernel(CollisionKernel):
             upper = y_bound_p[1] * lx_width - (etolxp - etolxm) / etob
         return self.kr * (upper - lower)
 
-    def kernel_integral(self, lx_bound, y_bound_p, btype, deg_lx, deg_ly,
-                        lx0=None, ly0=None):
+    def kernel_integral(self, basis_x, basis_y, lx_bound, y_bound_p, btype):
         r"""Computes an integral necessary for constructing the collision tensor.
 
         Arguments:
+        basis_x, basis_y - The x and y basis functions to integrate over.
         lx_bound - Bounds for l_x. Abbreviated below as lxm, lxp.
         y_bound_p - Bound parameters for l_y. Abbreviated below as (a, b).
         btype - Boundary type for y integrals.
-        deg_lx, deg_ly - Degree of polynomials for lx and ly basis functions.
-        lx0, ly0 (optional) - Assumed sole zero for lx and ly basis functions.
-                              Can be omitted for degree zero functions.
 
         If K_f is the scaled kernel function, this returns:
 
         \int_{lxm}^{lxp} \int_{g(a)}^{h(b)} e^{l_x} K_f(l_x, l_y)
           (l_x-lx0)**deg_lx (l_y-ly0)**deg_ly dl_y dl_x
         """
-        if deg_lx == 0 and deg_ly == 0:
+        if basis_x.degree == 0 and basis_y.degree == 0:
             return self.kernel_integral_deg0(lx_bound, y_bound_p, btype)
-        return super().kernel_integral(lx_bound, y_bound_p, btype, deg_lx,
-                                       deg_ly, lx0, ly0)
+        return super().kernel_integral(basis_x, basis_y, lx_bound, y_bound_p, btype)
 
     def kernel_integral_deg0(self, lx_bound, y_bound_p, btype):
         r"""Computes an integral necessary for constructing the collision tensor.

@@ -17,6 +17,7 @@
 import numpy as np
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid
+from bin_model.basis import PolynomialOnInterval
 from bin_model.collision_tensor import CollisionTensor
 from .array_assert import ArrayTestCase
 
@@ -68,15 +69,16 @@ class TestCollisionTensor(ArrayTestCase):
         y_idxs = [0, 1, 0, 5, 5, 5]
         z_idxs = [2, 3, 3, 6, 5, 6]
         for x_idx, y_idx, z_idx, in zip(x_idxs, y_idxs, z_idxs):
-            lx_bound = bb[x_idx:x_idx+2]
+            basis_x = PolynomialOnInterval(bb[x_idx], bb[x_idx+1], 0)
+            basis_y = PolynomialOnInterval(bb[y_idx], bb[y_idx+1], 0)
             ly_bound = bb[y_idx:y_idx+2]
             if z_idx < nb:
                 lz_bound = bb[z_idx:z_idx+2]
             else:
                 lz_bound = (bb[z_idx], np.inf)
             k = z_idx - ctens.idxs[x_idx,y_idx]
-            expected = self.ckern.integrate_over_bins(lx_bound, ly_bound,
-                                                       lz_bound)
+            expected = self.ckern.integrate_over_bins(basis_x, basis_y,
+                                                      lz_bound)
             self.assertAlmostEqual(ctens.data[k,x_idx,y_idx],
                                    expected * self.scaling)
 
@@ -129,15 +131,15 @@ class TestCollisionTensor(ArrayTestCase):
         y_idxs = [5, 5]
         z_idxs = [5, 5]
         for x_idx, y_idx, z_idx in zip(x_idxs, y_idxs, z_idxs):
-            lx_bound = bb[x_idx:x_idx+2]
-            ly_bound = bb[y_idx:y_idx+2]
+            basis_x = PolynomialOnInterval(bb[x_idx], bb[x_idx+1], 0)
+            basis_y = PolynomialOnInterval(bb[y_idx], bb[y_idx+1], 0)
             if z_idx < nb-1:
                 lz_bound = bb[z_idx:z_idx+2]
             else:
                 lz_bound = (bb[z_idx], np.inf)
             k = z_idx - ctens.idxs[x_idx,y_idx]
-            expected = self.ckern.integrate_over_bins(lx_bound, ly_bound,
-                                                       lz_bound)
+            expected = self.ckern.integrate_over_bins(basis_x, basis_y,
+                                                      lz_bound)
             self.assertAlmostEqual(ctens.data[k,x_idx,y_idx],
                                    expected * self.scaling)
 
