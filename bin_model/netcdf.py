@@ -17,7 +17,7 @@
 import numpy as np
 import netCDF4 as nc4
 
-from bin_model.basis import PiecewisePolyBasis
+from bin_model.basis import Basis
 from bin_model.constants import ModelConstants
 from bin_model.collision_kernel import CollisionKernel
 from bin_model.mass_grid import MassGrid
@@ -160,12 +160,12 @@ class NetcdfFile:
         return ModelConstants.from_netcdf(self)
 
     def write_basis(self, basis):
-        """Write a PiecewisePolyBasis object to a netCDF file."""
+        """Write a Basis object to a netCDF file."""
         basis.to_netcdf(self)
 
     def read_basis(self, grid):
-        """Read a PiecewisePolyBasis object from a netCDF file."""
-        return PiecewisePolyBasis.from_netcdf(self, grid)
+        """Read a Basis object from a netCDF file."""
+        return Basis.from_netcdf(self, grid)
 
     def write_collision_kernel(self, ckern):
         """Write a CollisionKernel object to a netCDF file."""

@@ -19,7 +19,7 @@ from bin_model import ModelConstants, LongKernel, HallKernel, \
     QuadToLogTransform, DerivativeVar, PerturbedVar, ModelStateDescriptor, \
     ModelState, RK45Integrator, ForwardEulerIntegrator, RK4Integrator, \
     RadauIntegrator, BackwardEulerIntegrator, Dirk2Integrator, \
-    StochasticPerturbation, PiecewisePolyBasis
+    StochasticPerturbation, make_piecewise_polynomial_basis
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -43,7 +43,7 @@ class TestNetcdfFile(ArrayTestCase):
                                       d_min=1.e-6,
                                       d_max=1.e-3,
                                       num_bins=nb)
-        self.basis = PiecewisePolyBasis(self.grid, 1)
+        self.basis = make_piecewise_polynomial_basis(self.grid, 1)
         self.ckern = LongKernel(self.constants)
         self.ctens = CollisionTensor(self.grid, ckern=self.ckern)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
@@ -239,7 +239,8 @@ class TestNetcdfFile(ArrayTestCase):
         self.NetcdfFile.write_basis(basis)
         basis2 = self.NetcdfFile.read_basis(self.grid)
         self.assertEqual(basis.size, basis2.size)
-        self.assertEqual(basis.degree, basis2.degree)
+        for i in range(basis.size):
+            self.assertEqual(basis[i], basis2[i])
 
     def test_constants_io(self):
         const = self.constants
