@@ -65,7 +65,7 @@ def beard_v(const, d):
 
 # pylint: disable-next=too-many-locals
 def sc_efficiency(d1, d2):
-    """Collection efficiency between particles of the given diameters.
+    """Collection efficiency calculated using the Scott and Chen formula.
 
     Arguments:
     d1, d2 - Particle diameters in meters.
@@ -100,6 +100,76 @@ def sc_efficiency(d1, d2):
     x1_term = b / (x**m + x1**m)**(1./m)
     u2_term = b / ((1.-x)**n + u2**n)**(1./n)
     return ((1. + x - x1_term - u2_term) / (1. + x)) **2
+
+_hall_radii = np.array([
+    10., 20., 30., 40., 50., 60., 70., 100., 150., 200., 300.,
+])
+
+_hall_efficiencies = np.array([
+    [1.e-4, 1.e-4, 1.e-4, 0.014, 0.017, 0.019, 0.022, 0.027, 0.030, 0.033,
+     0.035, 0.037, 0.038, 0.038, 0.037, 0.036, 0.035, 0.032, 0.029, 0.027], # 10
+    [1.e-4, 1.e-4, 0.005, 0.016, 0.022, 0.030, 0.043, 0.052, 0.064, 0.072,
+     0.079, 0.082, 0.080, 0.076, 0.067, 0.057, 0.048, 0.040, 0.033, 0.027], # 20
+    [1.e-4, 0.002, 0.020, 0.040, 0.085, 0.170, 0.270, 0.400, 0.500, 0.550,
+     0.580, 0.590, 0.580, 0.540, 0.510, 0.490, 0.470, 0.045, 0.470, 0.520], # 30
+    [0.001, 0.070, 0.280, 0.500, 0.620, 0.680, 0.740, 0.780, 0.800, 0.800,
+     0.800, 0.780, 0.770, 0.760, 0.770, 0.770, 0.780, 0.790, 0.950, 1.400], # 40
+    [0.005, 0.400, 0.600, 0.700, 0.780, 0.830, 0.860, 0.880, 0.900, 0.900,
+     0.900, 0.900, 0.890, 0.880, 0.880, 0.890, 0.920, 1.010, 1.300, 2.300], # 50
+    [0.050, 0.430, 0.640, 0.770, 0.840, 0.870, 0.890, 0.900, 0.910, 0.910,
+     0.910, 0.910, 0.910, 0.920, 0.930, 0.950, 1.000, 1.030, 1.700, 3.000], # 60
+    [0.200, 0.580, 0.750, 0.840, 0.880, 0.900, 0.920, 0.940, 0.950, 0.950,
+     0.950, 0.950, 0.950, 0.950, 0.970, 1.000, 1.020, 1.040, 2.300, 4.000], # 70
+    [0.500, 0.790, 0.910, 0.950, 0.950, 1.000, 1.000, 1.000, 1.000, 1.000,
+     1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000], # 100
+    [0.770, 0.930, 0.970, 0.970, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000,
+     1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000], # 150
+    [0.870, 0.960, 0.980, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000,
+     1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000], # 200
+    [0.970, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000,
+     1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000], # 300
+])
+
+def hall_efficiency(d1, d2):
+    """Collection efficiency calculated using the Hall table.
+
+    Arguments:
+    d1, d2 - Particle diameters in meters.
+
+    Returned value is collection efficiency interpolated from the table from
+    Hall (1980). Linear interpolation (over collector radius and radius ratio)
+    is used for all values within the table.
+
+    For collector drops of radius greater than 300 microns, the returned value
+    is always 1, in accordance with Hall (1980).  For collector drops of radius
+    less than 10 microns, this function behaves as if the drops had a size of 10
+    microns, except that the radius ratio is calculated using the true drop
+    size. For radius ratios lower than 0.05, this function behaves as if the
+    ratio was 0.05.
+    """
+    collector_d = max(d1, d2)
+    # Always return unity for the largest drops.
+    if collector_d > 600.e-6:
+        return 1.
+    r_ratio = min(d1, d2) / collector_d
+    collector_r = 1.e6 * collector_d / 2.
+    # Table has values for every 1/20 increment of r_ratio, so find nearest
+    # value above this one.
+    r_ratio_by_20 = 20. * r_ratio - 1.
+    ratio_idx = min(int(r_ratio_by_20), 18)
+    ratio_weight = max(r_ratio_by_20, 0.) - ratio_idx
+    low_r_idx = 0
+    low_r = _hall_radii[0]
+    for i, r in enumerate(_hall_radii[:-1]):
+        if collector_r <= r:
+            break
+        low_r_idx = i
+        low_r = r
+    r_weight = (max(collector_r, 10.) - low_r) / (_hall_radii[low_r_idx+1] - low_r)
+    return (1.-r_weight) * ((1. - ratio_weight) * _hall_efficiencies[low_r_idx, ratio_idx]
+                            + ratio_weight * _hall_efficiencies[low_r_idx, ratio_idx+1]) \
+              + r_weight * ((1. - ratio_weight) * _hall_efficiencies[low_r_idx+1, ratio_idx]
+                            + ratio_weight * _hall_efficiencies[low_r_idx+1, ratio_idx+1])
 
 
 class BoundType(enum.Flag):
@@ -622,11 +692,13 @@ class HallKernel(CollisionKernel):
     efficiency_name_len = 32
     """Maximum length of collection efficiency formula name."""
 
-    def __init__(self, constants, efficiency_name):
+    def __init__(self, constants, efficiency_name='Hall'):
         self.constants = constants
         self.efficiency_name = efficiency_name
         if efficiency_name == 'ScottChen':
             self.efficiency = sc_efficiency
+        elif efficiency_name == 'Hall':
+            self.efficiency = hall_efficiency
         else:
             raise ValueError("bad value for efficiency_name: "
                              + efficiency_name)

@@ -101,6 +101,57 @@ class TestSCEfficiency(unittest.TestCase):
         self.assertEqual(sc_efficiency(d1, d2), sc_efficiency(d2, d1))
 
 
+class TestHallEfficiency(unittest.TestCase):
+    """
+    Test hall_efficiency function.
+    """
+
+    def _check_hall_efficiency_value(self, radius, ratio, expected):
+        actual = hall_efficiency(2.e-6*radius, 2.e-6*radius*ratio)
+        self.assertAlmostEqual(actual / expected, 1.)
+        actual = hall_efficiency(2.e-6*radius*ratio, 2.e-6*radius)
+        self.assertAlmostEqual(actual / expected, 1.)
+
+    def test_hall_efficiency(self):
+        """Test the Hall efficiency for some exact table values."""
+        self._check_hall_efficiency_value(300., 0.05, 0.97)
+        self._check_hall_efficiency_value(300., 1., 1.)
+        self._check_hall_efficiency_value(10., 0.05, 0.0001)
+        self._check_hall_efficiency_value(10., 1., 0.027)
+        self._check_hall_efficiency_value(60., 0.5, 0.91)
+        self._check_hall_efficiency_value(30., 0.35, 0.27)
+        self._check_hall_efficiency_value(50., 0.85, 0.92)
+
+    def test_hall_efficiency_large(self):
+        """Test the Hall efficiency for large values of collector radius."""
+        self._check_hall_efficiency_value(301., 0.01, 1.)
+        self._check_hall_efficiency_value(301., 0.05, 1.)
+        self._check_hall_efficiency_value(301., 0.5, 1.)
+        self._check_hall_efficiency_value(301., 1., 1.)
+
+    def test_hall_efficiency_interp(self):
+        """Test the Hall efficiency for interpolated values."""
+        self._check_hall_efficiency_value(25., 0.675,
+                                          (0.58+0.54+0.08+0.076)*0.25)
+        self._check_hall_efficiency_value(62., 0.27,
+                                          0.48*0.84+0.32*0.87+0.12*0.88+0.08*0.90)
+        self._check_hall_efficiency_value(300., 0.07, 0.982)
+        self._check_hall_efficiency_value(80., 0.05, 0.3)
+        self._check_hall_efficiency_value(10., 0.725, 0.0375)
+        self._check_hall_efficiency_value(65., 1., 3.5)
+
+    def test_hall_efficiency_low_ratio(self):
+        """Test the Hall efficiency for low radius ratios."""
+        self._check_hall_efficiency_value(100., 0.02, 0.5)
+        self._check_hall_efficiency_value(80., 0.02, 0.3)
+
+    def test_hall_efficiency_small(self):
+        """Test the Hall efficiency for small values of collector radius."""
+        self._check_hall_efficiency_value(5., 0.2, 0.014)
+        self._check_hall_efficiency_value(5., 0.725, 0.0375)
+        self._check_hall_efficiency_value(5., 0.02, 0.0001)
+
+
 class TestRegionUtils(unittest.TestCase):
     """
     Test methods that map out and decompose integration regions.
@@ -900,12 +951,22 @@ class TestHallKernel(unittest.TestCase):
                                         rain_d=1.e-4,
                                         mass_conc_scale=1.e-3,
                                         time_scale=400.)
-        self.ckern = HallKernel(self.constants, 'ScottChen')
+        self.ckern = HallKernel(self.constants)
 
     def test_bad_efficiency_string_raises_error(self):
         """Check error raised if initialized with a bad efficiency_string."""
         with self.assertRaises(ValueError):
             HallKernel(self.constants, 'nonsense')
+
+    def test_efficiencies(self):
+        """Check that the expected efficiency is being used by the kernel."""
+        d1 = 10.e-6
+        d2 = 100.e-6
+        self.assertAlmostEqual(self.ckern.efficiency(d1, d2),
+                               hall_efficiency(d1, d2))
+        sc_ckern = HallKernel(self.constants, 'ScottChen')
+        self.assertAlmostEqual(sc_ckern.efficiency(d1, d2),
+                               sc_efficiency(d1, d2))
 
     def test_kernel_d(self):
         """Check kernel_d against the Hall kernel formula."""
@@ -914,7 +975,7 @@ class TestHallKernel(unittest.TestCase):
         d2 = 100.e-6
         actual = self.ckern.kernel_d(d1, d2)
         expected = np.abs(beard_v(const, d1) - beard_v(const, d2))
-        expected *= sc_efficiency(d1, d2)
+        expected *= hall_efficiency(d1, d2)
         expected *= 0.25 * np.pi * (d1 + d2)**2
         self.assertAlmostEqual(actual / expected, 1.)
         # pylint: disable-next=arguments-out-of-order
