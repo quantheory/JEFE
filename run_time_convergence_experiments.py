@@ -34,7 +34,10 @@ DTEXPS = list(range(8))
 
 with nc4.Dataset(CTENS_FILE_NAME, "r") as nc:
     netcdf_file = bm.NetcdfFile(nc)
-    const, ckern, grid, ctens = netcdf_file.read_tensor_and_metadata()
+    const, ckern, grid, basis, ctens = netcdf_file.read_tensor_and_metadata()
+
+recon = bm.ConstantReconstruction(grid)
+coal = bm.CollisionCoalescence(recon, ctens)
 
 m3_init = INITIAL_MASS / (const.rho_water * np.pi/6.) # m^3 / kg 3rd moment
 m0_init = INITIAL_NC * 1.e6 * const.rho_air # kg^-1 number concentration
@@ -46,6 +49,8 @@ dsd = bm.gamma_dist_d(grid.bin_bounds_d, lambda_init, INITIAL_NU)
 dsd *= INITIAL_MASS / np.sum(dsd)
 raw = desc.construct_raw(dsd)
 initial_state = bm.ModelState(desc, raw)
+# Avoid Numba compilation inside performance counter.
+initial_state.time_derivative_raw([coal])
 
 integrator_types = {
     'FE': bm.ForwardEulerIntegrator,
@@ -62,7 +67,7 @@ for integrator_name, integrator_type in integrator_types.items():
         dt = MAX_TIME_STEP * 2**(-x)
         integrator = integrator_type(const, dt)
         start_time = perf_counter()
-        exp = integrator.integrate(END_TIME, initial_state, [ctens])
+        exp = integrator.integrate(END_TIME, initial_state, [coal])
         time_taken = perf_counter() - start_time
         print(f"Time taken for x={x}, integrator={integrator_name} is"
               f" {time_taken}.")

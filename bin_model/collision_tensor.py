@@ -22,6 +22,7 @@ from bin_model.collision_kernel import CoalescenceKernel
 
 @nb.njit(nogil=True, cache=True)
 def add_at(rate, idxs, dfdt_term, nb):
+    """Numba-optimized function used to replace np.add.at."""
     for k in range(nb):
         for l in range(nb):
             rate[idxs[k,l]] += dfdt_term[k,l]
@@ -101,58 +102,6 @@ class CollisionTensor():
                         basis_x, basis_y, (bb[zidx], top_bound))
         return integrals
 
-    def calc_rate(self, f, out_flux=None, derivative=False):
-        """Calculate rate of change of f due to collision-coalescence.
-
-        Arguments:
-        f - Representation of DSD on this grid.
-        out_flux (optional) - Whether to force output of mass leaving the box.
-        derivative (optional) - Whether to return the Jacobian of the rate
-                                calculation as well.
-
-        ``f'' must be an array of total size num_bins or num_bins+1, either a
-        1-D array, a row vector, or column vector. If of size num_bins+1, the
-        last bin is assumed to hold the mass that has been removed from the
-        grid cell, which is ignored.
-
-        If out_flux is not specified, the output is an array with the same
-        shape as f, containing the rate of change of f over time due to
-        collision-coalescence. If f is of size num_bins+1, the final element of
-        the output is the amount of mass that leaves the box due to collision-
-        coalescence (i.e. due to becoming too large).
-
-        If out_flux is specified and True, then the output is the same as if f
-        had been of shape (nb+1,), and if it is False, then the output is the
-        same as if f was of shape (nb,).
-
-        If derivative is True, the return value is a tuple, where the first
-        element is the output described above, and the second element is a
-        square matrix with the same size (on each size) as the first output.
-        This matrix contains the Jacobian of this output with respect to the
-        DSD (+ fallout if included in the output).
-        """
-        nb = self.grid.num_bins
-        f_len = np.product(f.shape)
-        if not nb <= f_len < nb+2:
-            raise ValueError("invalid f length: "+str(f_len))
-        if out_flux is None:
-            out_flux = f_len == nb + 1
-            out_len = f_len
-            out_shape = f.shape
-        else:
-            out_len = nb + 1 if out_flux else nb
-            out_shape = (out_len,)
-        f_shaped = np.reshape(f.copy(), (f_len, 1))
-        f_shaped[:nb] /= np.reshape(self.grid.bin_widths, (nb, 1))
-        rate = self._calc_rate(f_shaped, out_flux, out_len)
-        output = np.reshape(rate, out_shape)
-        if derivative:
-            deriv = self._calc_deriv(f_shaped, out_flux, out_len)
-            for i in range(nb):
-                deriv[:,i] /= self.grid.bin_widths[i]
-            return output, deriv
-        return output
-
     def _calc_rate(self, f, out_flux, out_len):
         """Do tensor contraction to calculate rate for calc_rate."""
         nb = self.grid.num_bins
@@ -203,4 +152,4 @@ class CollisionTensor():
         """Retrieve collision tensor data from netCDF file."""
         boundary = netcdf_file.read_characters('boundary')
         data = netcdf_file.read_array('collision_tensor_data')
-        return CollisionTensor(grid, boundary=boundary, data=data)
+        return CollisionTensor(grid, boundary=boundary, data=np.array(data))

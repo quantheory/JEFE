@@ -19,7 +19,8 @@ import scipy.linalg as la
 
 from bin_model import ModelConstants, LongKernel, GeometricMassGrid, \
     CollisionTensor, LogTransform, DerivativeVar, PerturbedVar, \
-    ModelStateDescriptor, ModelState, RK45Integrator, StochasticPerturbation
+    ModelStateDescriptor, ModelState, RK45Integrator, StochasticPerturbation, \
+    ConstantReconstruction, CollisionCoalescence
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -46,6 +47,8 @@ class TestExperiment(ArrayTestCase):
                                       num_bins=nb)
         self.ckern = LongKernel(self.constants)
         self.ctens = CollisionTensor(self.grid, ckern=self.ckern)
+        self.recon = ConstantReconstruction(self.grid)
+        self.proc = CollisionCoalescence(self.recon, self.ctens)
         dvn = 2
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
@@ -105,12 +108,12 @@ class TestExperiment(ArrayTestCase):
         raws[0,:] = self.state.raw
         raws[1,:] = self.state2.raw
         states = [self.state, self.state2]
-        exp = Experiment(self.desc, [self.ctens], self.integrator, times, raws)
+        exp = Experiment(self.desc, [self.proc], self.integrator, times, raws)
         self.assertEqual(exp.constants.rho_air, self.constants.rho_air)
         self.assertEqual(exp.mass_grid.num_bins, self.grid.num_bins)
-        self.assertEqual(exp.proc_tens[0].ckern.kc, self.ckern.kc)
-        self.assertEqual(exp.proc_tens[0].data.shape, self.ctens.data.shape)
-        self.assertTrue(np.all(exp.proc_tens[0].data == self.ctens.data))
+        self.assertEqual(exp.proc_tens[0].ctens.ckern.kc, self.ckern.kc)
+        self.assertEqual(exp.proc_tens[0].ctens.data.shape, self.ctens.data.shape)
+        self.assertTrue(np.all(exp.proc_tens[0].ctens.data == self.ctens.data))
         self.assertEqual(exp.times.shape, (ntimes,))
         self.assertEqual(len(exp.states), ntimes)
         for i in range(ntimes):
@@ -130,7 +133,7 @@ class TestExperiment(ArrayTestCase):
         ddsddt = np.zeros((ntimes, nb))
         for i in range(ntimes):
             ddsddt = np.linspace(-nb+i, -i, nb)
-        exp = Experiment(self.desc, [self.ctens], self.integrator, times, raws,
+        exp = Experiment(self.desc, [self.proc], self.integrator, times, raws,
                          ddsddt=ddsddt)
         self.assertEqual(exp.ddsddt.shape, ddsddt.shape)
         for i in range(len(ddsddt.flat)):
@@ -151,7 +154,7 @@ class TestExperiment(ArrayTestCase):
             zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + dvn**2-1),
                                                 dvn**2),
                                     (dvn, dvn))
-        exp = Experiment(self.desc, [self.ctens], self.integrator, times, raws,
+        exp = Experiment(self.desc, [self.proc], self.integrator, times, raws,
                          zeta_cov=zeta_cov)
         self.assertEqual(exp.zeta_cov.shape, zeta_cov.shape)
         for i in range(len(zeta_cov.flat)):
@@ -162,7 +165,7 @@ class TestExperiment(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         end_time = 15.
-        exp = self.integrator.integrate(end_time, self.state, [self.ctens])
+        exp = self.integrator.integrate(end_time, self.state, [self.proc])
         wvs = np.zeros((2, nb))
         wvs[0,:] = grid.moment_weight_vector(6)
         wvs[1,:] = grid.moment_weight_vector(3, cloud_only=True)
@@ -187,7 +190,7 @@ class TestExperiment(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         end_time = 15.
-        exp = self.integrator.integrate(end_time, self.state, [self.ctens])
+        exp = self.integrator.integrate(end_time, self.state, [self.proc])
         wvs = grid.moment_weight_vector(6)
         mom, cov = exp.get_moments_and_covariances(wvs)
         expected_mom = np.zeros((2,))
@@ -208,7 +211,7 @@ class TestExperiment(ArrayTestCase):
         grid = self.grid
         nb = grid.num_bins
         end_time = 15.
-        exp = self.integrator.integrate(end_time, self.state, [self.ctens])
+        exp = self.integrator.integrate(end_time, self.state, [self.proc])
         wvs = np.zeros((2, nb))
         wvs[0,:] = grid.moment_weight_vector(6)
         wvs[1,:] = grid.moment_weight_vector(3, cloud_only=True)
@@ -245,12 +248,12 @@ class TestExperiment(ArrayTestCase):
             zeta_cov = np.reshape(np.linspace(50. + i, 50. + (i + dvn**2-1),
                                                 dvn**2),
                                     (dvn, dvn))
-        exp = Experiment(self.desc, [self.ctens], self.integrator, times, raws,
+        exp = Experiment(self.desc, [self.proc], self.integrator, times, raws,
                          ddsddt=ddsddt)
         wvs = self.grid.moment_weight_vector(6)
         with self.assertRaises(RuntimeError):
             exp.get_moments_and_covariances(wvs)
-        exp = Experiment(self.desc, [self.ctens], self.integrator, times, raws,
+        exp = Experiment(self.desc, [self.proc], self.integrator, times, raws,
                          zeta_cov=zeta_cov)
         with self.assertRaises(RuntimeError):
             exp.get_moments_and_covariances(wvs)

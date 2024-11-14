@@ -42,19 +42,26 @@ m0_init = INITIAL_NC * 1.e6 * const.rho_air # kg^-1 number concentration
 lambda_init = ( m0_init * gamma(INITIAL_NU + 3)
     / (m3_init * gamma(INITIAL_NU)) )**(1./3.) # m^-1 scale parameter
 
+compiled = False
 for nb in BIN_NUMBERS:
     ctens_file_name = CTENS_FILE_NAME_TEMPLATE.format(nb)
     with nc4.Dataset(ctens_file_name, "r") as nc:
         netcdf_file = bm.NetcdfFile(nc)
-        const, ckern, grid, ctens = netcdf_file.read_tensor_and_metadata()
+        const, ckern, grid, basis, ctens = netcdf_file.read_tensor_and_metadata()
+    recon = bm.ConstantReconstruction(grid)
+    coal = bm.CollisionCoalescence(recon, ctens)
     desc = bm.ModelStateDescriptor(const, grid)
     dsd = bm.gamma_dist_d(grid.bin_bounds_d, lambda_init, INITIAL_NU)
     dsd *= INITIAL_MASS / np.sum(dsd)
     raw = desc.construct_raw(dsd)
     initial_state = bm.ModelState(desc, raw)
+    # Avoid Numba compilation inside performance counter.
+    if not compiled:
+        initial_state.time_derivative_raw([coal])
+        compiled = True
     integrator = bm.RK45Integrator(const, DT)
     start_time = perf_counter()
-    exp = integrator.integrate(END_TIME, initial_state, [ctens])
+    exp = integrator.integrate(END_TIME, initial_state, [coal])
     time_taken = perf_counter() - start_time
     print(f"Time taken for nb={nb} is {time_taken}.")
     output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(nb)

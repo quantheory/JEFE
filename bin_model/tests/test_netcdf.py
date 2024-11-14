@@ -19,7 +19,8 @@ from bin_model import ModelConstants, LongKernel, HallKernel, \
     QuadToLogTransform, DerivativeVar, PerturbedVar, ModelStateDescriptor, \
     ModelState, RK45Integrator, ForwardEulerIntegrator, RK4Integrator, \
     RadauIntegrator, BackwardEulerIntegrator, Dirk2Integrator, \
-    StochasticPerturbation, make_piecewise_polynomial_basis
+    StochasticPerturbation, make_piecewise_polynomial_basis, \
+    ConstantReconstruction, CollisionCoalescence
 from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 # pylint: disable-next=wildcard-import,unused-wildcard-import
@@ -46,6 +47,8 @@ class TestNetcdfFile(ArrayTestCase):
         self.basis = make_piecewise_polynomial_basis(self.grid, 1)
         self.ckern = LongKernel(self.constants)
         self.ctens = CollisionTensor(self.grid, ckern=self.ckern)
+        self.recon = ConstantReconstruction(self.grid)
+        self.proc = CollisionCoalescence(self.recon, self.ctens)
         deriv_vars = [DerivativeVar('lambda', 1./self.constants.diameter_scale),
                       DerivativeVar('nu')]
         nvar = 3
@@ -94,7 +97,7 @@ class TestNetcdfFile(ArrayTestCase):
         self.radau_integrator = RadauIntegrator(self.constants, dt)
         self.be_integrator = BackwardEulerIntegrator(self.constants, dt)
         self.dirk2_integrator = Dirk2Integrator(self.constants, dt)
-        self.exp = Experiment(self.desc, self.ctens, self.integrator,
+        self.exp = Experiment(self.desc, [self.proc], self.integrator,
                               self.times, raws)
         self.dataset = nc4.Dataset('test.nc', 'w', diskless=True)
         self.NetcdfFile = NetcdfFile(self.dataset)
@@ -446,11 +449,10 @@ class TestNetcdfFile(ArrayTestCase):
 
     def test_simple_experiment_io(self):
         desc = self.desc
-        ctens = self.ctens
         integrator = self.integrator
         exp = self.exp
         self.NetcdfFile.write_experiment(exp)
-        exp2 = self.NetcdfFile.read_experiment(desc, [ctens], integrator)
+        exp2 = self.NetcdfFile.read_experiment(desc, [self.proc], integrator)
         num_step = len(exp.times) - 1
         self.assertEqual(len(exp2.times), num_step+1)
         for i in range(num_step+1):
@@ -465,14 +467,13 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        ctens = self.ctens
         integrator = self.integrator
         self.NetcdfFile.write_constants(const)
         self.NetcdfFile.write_mass_grid(grid)
-        exp = integrator.integrate(integrator.dt*2., self.state, [ctens],
+        exp = integrator.integrate(integrator.dt*2., self.state, [self.proc],
                                    self.perturb)
         self.NetcdfFile.write_experiment(exp)
-        exp2 = self.NetcdfFile.read_experiment(desc, [ctens], integrator)
+        exp2 = self.NetcdfFile.read_experiment(desc, [self.proc], integrator)
         num_step = len(exp.times) - 1
         self.assertEqual(len(exp2.times), num_step+1)
         for i in range(num_step+1):
@@ -495,17 +496,16 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        ctens = self.ctens
         integrator = self.integrator
-        exp = integrator.integrate(integrator.dt*2., self.state, [ctens],
+        exp = integrator.integrate(integrator.dt*2., self.state, [self.proc],
                                    self.perturb)
         self.NetcdfFile.write_full_experiment(exp, ["k1.nc", "k2.nc"])
-        exp2 = self.NetcdfFile.read_full_experiment([ctens])
+        exp2 = self.NetcdfFile.read_full_experiment([self.proc])
         files = self.NetcdfFile.read_characters('proc_tens_files')
         self.assertEqual(len(files), 2)
         self.assertEqual(files[0], "k1.nc")
         self.assertEqual(files[1], "k2.nc")
         self.assertEqual(exp2.desc.perturbed_num, exp.desc.perturbed_num)
-        self.assertIs(exp2.proc_tens[0], ctens)
+        self.assertIs(exp2.proc_tens[0], self.proc)
         self.assertEqual(exp2.integrator.dt, exp.integrator.dt)
         self.assertEqual(exp2.num_time_steps, exp.num_time_steps)

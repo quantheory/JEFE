@@ -31,13 +31,13 @@ class Integrator:
     integrator_type_str_len = 64
     """Length of integrator_type string on file."""
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -48,13 +48,13 @@ class Integrator:
         """
         raise NotImplementedError
 
-    def integrate(self, t_len, state, proc_tens, perturb=None):
+    def integrate(self, t_len, state, procs, perturb=None):
         """Integrate the state and return an Experiment.
 
         Arguments:
         t_len - Length of time to integrate over (seconds).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -64,7 +64,7 @@ class Integrator:
         """
         tscale = self.constants.time_scale
         desc = state.desc
-        times, raws = self.integrate_raw(t_len / tscale, state, proc_tens,
+        times, raws = self.integrate_raw(t_len / tscale, state, procs,
                                          perturb)
         times = times * tscale
         if state.desc.perturbed_num > 0:
@@ -80,7 +80,7 @@ class Integrator:
             ddsddt = np.zeros((num_step+1, nb))
             states = [ModelState(desc, raws[i,:]) for i in range(num_step+1)]
             for i in range(num_step+1):
-                ddsddt[i,:] = states[i].dsd_time_deriv_raw(proc_tens)[:nb]
+                ddsddt[i,:] = states[i].dsd_time_deriv_raw(procs)[:nb]
             pn = desc.perturbed_num
             if pn > 0:
                 zeta_cov = np.zeros((num_step+1, dvn+1, dvn+1))
@@ -91,7 +91,7 @@ class Integrator:
         else:
             ddsddt = None
             zeta_cov = None
-        return Experiment(desc, proc_tens, self, times, raws,
+        return Experiment(desc, procs, self, times, raws,
                           ddsddt=ddsddt, zeta_cov=zeta_cov)
 
     def to_netcdf(self, netcdf_file):
@@ -134,7 +134,7 @@ class Integrator:
     # arguably have the leading underscore removed and be placed under unit test
     # directly. Arguably this whole functionality should just be moved to
     # CollisionTensor or State.
-    def _get_jac_util(self, state, proc_tens):
+    def _get_jac_util(self, state, procs):
         """Calculate Jacobian of the time derivative of a state.
 
         Does not currently support states with any DerivativeVar.
@@ -145,8 +145,8 @@ class Integrator:
         f = state.desc.dsd_raw(state.raw)[:nb] / bw
         f_shaped = np.reshape(f[:nb], (nb, 1))
         output = np.zeros((raw_len, raw_len))
-        for pt in proc_tens:
-            deriv = pt._calc_deriv(f_shaped, out_flux=True, out_len=nb+1)
+        for proc in procs:
+            deriv = proc.ctens._calc_deriv(f_shaped, out_flux=True, out_len=nb+1)
             for i in range(nb):
                 deriv[:,i] /= bw[i]
             output += deriv
@@ -166,13 +166,13 @@ class RK45Integrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -185,7 +185,7 @@ class RK45Integrator(Integrator):
         times = self._get_times_util(t_len, dt)
         raw_len = len(state.raw)
         rate_fun = lambda t, raw: \
-            ModelState(state.desc, raw).time_derivative_raw(proc_tens, perturb)
+            ModelState(state.desc, raw).time_derivative_raw(procs, perturb)
         nb = state.mass_grid.num_bins
         atol = 1.e-6 * np.ones(raw_len)
         dsd_idx, _ = state.desc.dsd_loc()
@@ -228,13 +228,13 @@ class ForwardEulerIntegrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -252,7 +252,7 @@ class ForwardEulerIntegrator(Integrator):
         for i in range(num_step):
             step_state = ModelState(state.desc, output[i,:])
             output[i+1,:] = output[i,:] + \
-                dt * step_state.time_derivative_raw(proc_tens, perturb)
+                dt * step_state.time_derivative_raw(procs, perturb)
         return times, output
 
     def to_netcdf(self, netcdf_file):
@@ -280,13 +280,13 @@ class RK4Integrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -308,7 +308,7 @@ class RK4Integrator(Integrator):
             coefs = [0.5, 0.5, 1., 0.]
             for j in range(num_stages):
                 stage_state = ModelState(state.desc, output[i,:]+add_next)
-                slopes[j,:] = stage_state.time_derivative_raw(proc_tens,
+                slopes[j,:] = stage_state.time_derivative_raw(procs,
                                                               perturb)
                 add_next = coefs[j] * dt * slopes[j,:]
             weights = (dt / 6.) * np.array([1., 2., 2., 1.])
@@ -340,13 +340,13 @@ class RadauIntegrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -367,9 +367,9 @@ class RadauIntegrator(Integrator):
         raw_len = len(state.raw)
         nb = state.mass_grid.num_bins
         rate_fun = lambda t, raw: \
-            ModelState(state.desc, raw).time_derivative_raw(proc_tens, perturb)
+            ModelState(state.desc, raw).time_derivative_raw(procs, perturb)
         rate_jac = lambda t, raw: \
-            self._get_jac_util(ModelState(state.desc, raw), proc_tens)
+            self._get_jac_util(ModelState(state.desc, raw), procs)
         atol = 1.e-6 * np.ones(raw_len)
         dsd_idx, _ = state.desc.dsd_loc()
         atol[dsd_idx:dsd_idx+nb] = 1.e-6 * state.mass_grid.bin_widths
@@ -411,13 +411,13 @@ class BackwardEulerIntegrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -439,11 +439,11 @@ class BackwardEulerIntegrator(Integrator):
             step_state = ModelState(state.desc, output[i,:])
             def residual_f(raw):
                 new_state = ModelState(state.desc, raw)
-                tend = new_state.time_derivative_raw(proc_tens, perturb)
+                tend = new_state.time_derivative_raw(procs, perturb)
                 return new_state.raw - step_state.raw - dt * tend
             def residual_j(raw):
                 new_state = ModelState(state.desc, raw)
-                jac = self._get_jac_util(new_state, proc_tens)
+                jac = self._get_jac_util(new_state, procs)
                 return np.eye(len(raw)) - dt * jac
             scale = np.ones(raw_len)
             scale[:state.mass_grid.num_bins] = 1./state.mass_grid.bin_widths
@@ -487,13 +487,13 @@ class Dirk2Integrator(Integrator):
         self.dt = dt
         self.dt_raw = dt / constants.time_scale
 
-    def integrate_raw(self, t_len, state, proc_tens, perturb=None):
+    def integrate_raw(self, t_len, state, procs, perturb=None):
         """Integrate the state and return raw state data.
 
         Arguments:
         t_len - Length of time to integrate over (nondimensionalized units).
         state - Initial state.
-        proc_tens - List of process tensors to calculate state process rates
+        procs - List of processes to calculate state process rates
                     each time step.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -517,11 +517,11 @@ class Dirk2Integrator(Integrator):
             step_state = ModelState(state.desc, output[i,:])
             def residual_f(raw):
                 new_state = ModelState(state.desc, raw)
-                tend = new_state.time_derivative_raw(proc_tens, perturb)
+                tend = new_state.time_derivative_raw(procs, perturb)
                 return new_state.raw - step_state.raw - dt * tend
             def residual_j(raw):
                 new_state = ModelState(state.desc, raw)
-                jac = self._get_jac_util(new_state, proc_tens)
+                jac = self._get_jac_util(new_state, procs)
                 return np.eye(len(raw)) - dt * jac
             sol = root(residual_f, step_state.raw, jac=residual_j, tol=1.e-6,
                        options={'diag': scale})
@@ -529,17 +529,17 @@ class Dirk2Integrator(Integrator):
                 raise RuntimeError("integration failed: " + sol.message)
             be = sol.x
             be_tend = ModelState(state.desc, sol.x) \
-                .time_derivative_raw(proc_tens, perturb)
+                .time_derivative_raw(procs, perturb)
             def residual_f2(raw):
                 new_state = ModelState(state.desc, raw)
-                tend = new_state.time_derivative_raw(proc_tens, perturb)
+                tend = new_state.time_derivative_raw(procs, perturb)
                 return new_state.raw - step_state.raw - dt * (tend - be_tend)
             sol = root(residual_f2, step_state.raw, jac=residual_j, tol=1.e-6,
                        options={'diag': scale})
             if not sol.success:
                 raise RuntimeError("integration failed: " + sol.message)
             stage2_tend = ModelState(state.desc, sol.x) \
-                .time_derivative_raw(proc_tens, perturb)
+                .time_derivative_raw(procs, perturb)
             output[i+1,:] = output[i,:] + 0.5 * dt * (be_tend + stage2_tend)
         return times, output
 

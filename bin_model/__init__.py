@@ -28,6 +28,8 @@ from bin_model.math_utils import gamma_dist_d, gamma_dist_d_lam_deriv, \
     gamma_dist_d_nu_deriv
 from bin_model.netcdf import NetcdfFile
 from bin_model.perturbation import StochasticPerturbation
+from bin_model.process import Process, CollisionCoalescence
+from bin_model.reconstruction import Reconstruction, ConstantReconstruction
 from bin_model.state import ModelState
 from bin_model.time import Integrator, RK45Integrator, ForwardEulerIntegrator, \
     RK4Integrator, RadauIntegrator, BackwardEulerIntegrator, Dirk2Integrator

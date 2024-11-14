@@ -109,16 +109,16 @@ class ModelState:
         return output
 
     def dsd_time_deriv_raw(self, proc_tens):
-        """Time derivative of the raw dsd using the given process tensors.
+        """Time derivative of the raw dsd using the given processes.
 
         Arguments:
-        proc_tens - List of process tensors, the rates of which sum to give the
+        proc_tens - List of processes, the rates of which sum to give the
                     time derivative.
         """
         dsd_raw = self.desc.dsd_raw(self.raw, with_fallout=True)
         dfdt = np.zeros(dsd_raw.shape)
-        for pt in proc_tens:
-            dfdt += pt.calc_rate(dsd_raw, out_flux=True)
+        for proc in proc_tens:
+            dfdt += proc.calc_rate(dsd_raw, out_flux=True)
         return dfdt
 
     # Better to just disable this check than to do a relatively "unnatural"
@@ -127,7 +127,7 @@ class ModelState:
         """Apply proc_tens to self, returning raw vector time derivative.
 
         Arguments:
-        proc_tens - List of process tensors, the rates of which sum to give the
+        proc_tens - List of processes, the rates of which sum to give the
                     time derivative.
         double_time_deriv - Array accumulating the second derivative of the dsd
                             with respect to time. If input is None, then this
@@ -138,20 +138,20 @@ class ModelState:
         dfdt = np.zeros((len(self.raw),))
         dsd_raw = desc.dsd_raw(self.raw)
         didx, dnum = desc.dsd_loc(with_fallout=True)
-        for pt in proc_tens:
+        for proc in proc_tens:
             if dvn > 0:
-                dfdt += self._apply_proc_tens_with_deriv(dsd_raw, pt,
+                dfdt += self._apply_proc_tens_with_deriv(dsd_raw, proc,
                                                          double_time_deriv)
             else:
-                dfdt[didx:didx+dnum] += pt.calc_rate(dsd_raw, out_flux=True)
+                dfdt[didx:didx+dnum] += proc.calc_rate(dsd_raw, out_flux=True)
         return dfdt
 
-    def _apply_proc_tens_with_deriv(self, dsd_raw, pt, double_time_deriv):
-        """Apply single process tensor to self assuming dvn > 0.
+    def _apply_proc_tens_with_deriv(self, dsd_raw, proc, double_time_deriv):
+        """Apply single process to self assuming dvn > 0.
 
         Arguments:
         dsd_raw - Raw dsd vector.
-        pt - The process tensor.
+        proc - The process.
         double_time_deriv - Array accumulating the second derivative of the dsd
                             with respect to time. If input is None, then this
                             calculation is not performed.
@@ -161,7 +161,7 @@ class ModelState:
         dsd_deriv_raw = desc.dsd_deriv_raw(self.raw, with_fallout=True)
         didx, dnum = desc.dsd_loc(with_fallout=True)
         dridxs, drnum = desc.dsd_deriv_loc(with_fallout=True)
-        rate, derivative = pt.calc_rate(dsd_raw, out_flux=True,
+        rate, derivative = proc.calc_rate(dsd_raw, out_flux=True,
                                         derivative=True)
         dfdt[didx:didx+dnum] = rate
         for i, dridx in enumerate(dridxs):
@@ -171,10 +171,10 @@ class ModelState:
         return dfdt
 
     def time_derivative_raw(self, proc_tens, perturb=None):
-        """Time derivative of the state using the given process tensors.
+        """Time derivative of the state using the given processes.
 
         Arguments:
-        proc_tens - List of process tensors, the rates of which sum to give the
+        proc_tens - List of processes, the rates of which sum to give the
                     time derivative.
         perturb (optional) - StochasticPerturbation affecting perturbed
                              variables.
@@ -361,11 +361,11 @@ class ModelState:
         perturb_cov_raw = desc.perturb_cov_raw(self.raw)
         return v_to_zeta @ perturb_cov_raw @ v_to_zeta.T
 
-    def rain_prod_breakdown(self, ctens, cloud_vector, derivative=None):
+    def rain_prod_breakdown(self, proc, cloud_vector, derivative=None):
         """Calculate autoconversion and accretion rates.
 
         Arguments:
-        ctens - CollisionTensor.
+        proc - Process.
         cloud_vector - A vector of values between 0 and 1, representing the
                        percentage of mass in a bin that should be considered
                        cloud rather than rain.
@@ -385,7 +385,7 @@ class ModelState:
         nb = grid.num_bins
         m3_vector = grid.moment_weight_vector(3)
         dsd_raw = self.desc.dsd_raw(self.raw)
-        total_inter = ctens.calc_rate(dsd_raw, out_flux=True,
+        total_inter = proc.calc_rate(dsd_raw, out_flux=True,
                                       derivative=derivative)
         if derivative:
             save_deriv = total_inter[1]
@@ -397,7 +397,7 @@ class ModelState:
                                                           with_fallout=True)
             total_deriv = save_deriv @ dsd_deriv_raw.T
         cloud_dsd_raw = dsd_raw * cloud_vector
-        cloud_inter = ctens.calc_rate(cloud_dsd_raw, out_flux=True,
+        cloud_inter = proc.calc_rate(cloud_dsd_raw, out_flux=True,
                                       derivative=derivative)
         if derivative:
             cloud_dsd_deriv = np.transpose(dsd_deriv_raw).copy()
