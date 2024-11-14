@@ -853,6 +853,42 @@ class TestLongKernel(unittest.TestCase):
         self.assertAlmostEqual(actual / expected, 1.)
 
 
+class TestMakeGolovinKernel(unittest.TestCase):
+    """
+    Test output of make_golovin_kernel.
+    """
+
+    def setUp(self):
+        """Create a LongKernel for testing purposes."""
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        diameter_scale=1.e-4,
+                                        rain_d=1.e-4)
+
+    def test_golovin_vs_long(self):
+        """Test Golovin kernel gives the same result as equivalent Long kernel."""
+        ckern = make_golovin_kernel(self.constants)
+        long_ckern = LongKernel(self.constants, rain_m=1.e-30, kr_si=6.e3)
+        basis_x = PolynomialOnInterval(-1., 0., 0)
+        basis_y = PolynomialOnInterval(-1., 0., 0)
+        lz_bound = (0., 1.)
+        actual = ckern.integrate_over_bins(basis_x, basis_y, lz_bound)
+        expected = long_ckern.integrate_over_bins(basis_x, basis_y, lz_bound)
+        self.assertAlmostEqual(actual, expected, places=20)
+
+    def test_golovin_vs_long_altered_b(self):
+        """Test make_golovin_kernel handles the b argument correctly."""
+        altered_b = 5.e3
+        ckern = make_golovin_kernel(self.constants, b=altered_b)
+        long_ckern = LongKernel(self.constants, rain_m=1.e-30, kr_si=altered_b)
+        basis_x = PolynomialOnInterval(-1., 0., 0)
+        basis_y = PolynomialOnInterval(-1., 0., 0)
+        lz_bound = (0., 1.)
+        actual = ckern.integrate_over_bins(basis_x, basis_y, lz_bound)
+        expected = long_ckern.integrate_over_bins(basis_x, basis_y, lz_bound)
+        self.assertAlmostEqual(actual, expected, places=20)
+
+
 class TestHallKernel(unittest.TestCase):
     """
     Test HallKernel methods.

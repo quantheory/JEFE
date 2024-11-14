@@ -596,6 +596,19 @@ class LongKernel(CollisionKernel):
             "Cloud-rain threshold mass")
 
 
+def make_golovin_kernel(constants, b=6.e3):
+    """Create a Golovin kernel.
+
+    Arguments:
+    b (optional) - The constant scaling factor to multiply the kernel by.
+                   Defaults to 6000 sec^-1.
+
+    This is implemented by returning a LongKernel with the rain threshold
+    diameter set extremely low (to 10^-3 microns).
+    """
+    return LongKernel(constants, rain_m=1.e-30, kr_si=b)
+
+
 class HallKernel(CollisionKernel):
     """
     Implement Hall-like collision-coalescence kernel.
