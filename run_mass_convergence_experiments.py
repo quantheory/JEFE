@@ -46,7 +46,7 @@ for nb in BIN_NUMBERS:
     ctens_file_name = CTENS_FILE_NAME_TEMPLATE.format(nb)
     with nc4.Dataset(ctens_file_name, "r") as nc:
         netcdf_file = bm.NetcdfFile(nc)
-        const, ckern, grid, ctens = netcdf_file.read_ckgt()
+        const, ckern, grid, ctens = netcdf_file.read_tensor_and_metadata()
     desc = bm.ModelStateDescriptor(const, grid)
     dsd = bm.gamma_dist_d(grid.bin_bounds_d, lambda_init, INITIAL_NU)
     dsd *= INITIAL_MASS / np.sum(dsd)

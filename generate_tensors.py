@@ -49,4 +49,4 @@ for nb in BIN_NUMBERS:
     file_name = FILE_NAME_TEMPLATE.format(nb)
     with nc4.Dataset(file_name, "w") as nc:
         netcdf_file = bm.NetcdfFile(nc)
-        netcdf_file.write_ckgt(ctens)
+        netcdf_file.write_tensor_and_metadata(ctens)

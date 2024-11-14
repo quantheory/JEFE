@@ -34,7 +34,7 @@ DTEXPS = list(range(8))
 
 with nc4.Dataset(CTENS_FILE_NAME, "r") as nc:
     netcdf_file = bm.NetcdfFile(nc)
-    const, ckern, grid, ctens = netcdf_file.read_ckgt()
+    const, ckern, grid, ctens = netcdf_file.read_tensor_and_metadata()
 
 m3_init = INITIAL_MASS / (const.rho_water * np.pi/6.) # m^3 / kg 3rd moment
 m0_init = INITIAL_NC * 1.e6 * const.rho_air # kg^-1 number concentration

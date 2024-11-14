@@ -317,16 +317,19 @@ class TestNetcdfFile(ArrayTestCase):
             self.assertAlmostEqual(ctens2.data.flat[i] / scale,
                                    ctens.data.flat[i] / scale)
 
-    def test_ckgt_io(self):
+    def test_tensor_and_metadata_io(self):
         const = self.constants
         ckern = self.ckern
         grid = self.grid
+        basis = self.ctens.basis
         ctens = self.ctens
-        self.NetcdfFile.write_ckgt(ctens)
-        const2, ckern2, grid2, ctens2 = self.NetcdfFile.read_ckgt()
+        self.NetcdfFile.write_tensor_and_metadata(ctens)
+        const2, ckern2, grid2, basis2, ctens2 = self.NetcdfFile.read_tensor_and_metadata()
         self.assertEqual(const2.rho_water, const.rho_water)
         self.assertEqual(ckern2.kc, ckern.kc)
         self.assertEqual(grid2.d_min, grid.d_min)
+        for i in range(len(basis)):
+            self.assertEqual(basis[i], basis2[i])
         self.assertEqual(ctens2.data.shape, ctens.data.shape)
         scale = ctens.data.max()
         for i in range(len(ctens.data.flat)):
@@ -338,7 +341,7 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        self.NetcdfFile.write_ckgt(self.ctens)
+        self.NetcdfFile.write_tensor_and_metadata(self.ctens)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
         self.assertEqual(desc2.deriv_var_num, desc.deriv_var_num)
@@ -364,7 +367,7 @@ class TestNetcdfFile(ArrayTestCase):
         const = self.constants
         grid = self.grid
         desc = self.desc
-        self.NetcdfFile.write_ckgt(self.ctens)
+        self.NetcdfFile.write_tensor_and_metadata(self.ctens)
         self.NetcdfFile.write_descriptor(desc)
         ttsl = self.NetcdfFile.read_dimension("transform_type_str_len")
         self.NetcdfFile.nc['perturbed_transform_types'][0,:] = \
@@ -376,7 +379,7 @@ class TestNetcdfFile(ArrayTestCase):
         nb = self.grid.num_bins
         const = self.constants
         grid = self.grid
-        self.NetcdfFile.write_ckgt(self.ctens)
+        self.NetcdfFile.write_tensor_and_metadata(self.ctens)
         desc = ModelStateDescriptor(const, grid)
         self.NetcdfFile.write_descriptor(desc)
         desc2 = self.NetcdfFile.read_descriptor(const, grid)
