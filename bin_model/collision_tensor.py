@@ -14,9 +14,16 @@
 
 """Class for the collision-coalescence tensor in JEFE's bin model."""
 
+import numba as nb
 import numpy as np
 
 from bin_model.basis import PolynomialOnInterval
+
+@nb.njit
+def add_at(rate, idxs, dfdt_term, nb):
+    for k in range(nb):
+        for l in range(nb):
+            rate[idxs[k,l]] += dfdt_term[k,l]
 
 class CollisionTensor():
     """
@@ -150,7 +157,7 @@ class CollisionTensor():
             # Removal terms.
             rate[:nb] -= np.sum(dfdt_term,axis=1)
             # Production terms.
-            np.add.at(rate, self.idxs + i, dfdt_term)
+            add_at(rate, self.idxs + i, dfdt_term, nb)
         if out_flux:
             rate[out_len-1] = rate[out_len-1:].sum()
         return rate[:out_len]

@@ -3,6 +3,7 @@
 from time import perf_counter
 
 import matplotlib.pyplot as plt
+import netCDF4 as nc4
 import numpy as np
 from scipy.integrate import quad
 import scipy.linalg as la
@@ -122,9 +123,9 @@ def mass_weighted_dsd_at_bin(d, t, b, n0, v0):
 
 # Calculate analytic solution on same grid as numerical solution.
 times = exp.times
-gol_masses = np.zeros((nt, nb))
-for i in range(nt):
-    t = np.maximum(times[i], 1.e-10) # phi technically undefined at tau = 0.
+gol_masses = np.zeros((2, nb))
+for i in range(2):
+    t = (i+1) * 1800.
     for j in range(nb):
         upper = grid.bin_bounds_d[j]
         lower = grid.bin_bounds_d[j+1]
@@ -140,9 +141,18 @@ for i in range(nt):
 
 idx_1800 = int(np.round(1800 / DT))
 idx_3600 = int(np.round(3600 / DT))
-diffs = masses - gol_masses
-print("Mass RMS difference at 1800s: ", la.norm(diffs[idx_1800,:]))
-print("Mass RMS difference at 3600s: ", la.norm(diffs[idx_3600,:]))
+print("Mass RMS difference at 1800s: ", la.norm(masses[idx_1800,:]
+                                                - gol_masses[0,:]))
+print("Mass RMS difference at 3600s: ", la.norm(masses[idx_3600,:]
+                                                - gol_masses[0,:]))
+
+with nc4.Dataset("bott_golovin_s2.nc") as data:
+    bott_masses = data['mass'][:,:].T
+
+print("Bott mass RMS difference at 1800s: ", la.norm(bott_masses[idx_1800,:]
+                                                - gol_masses[0,:]))
+print("Bott mass RMS difference at 3600s: ", la.norm(bott_masses[idx_3600,:]
+                                                - gol_masses[0,:]))
 
 # Middle radius in each bin in microns, for plotting.
 bin_centers_r = 1.e6 * np.sqrt(grid.bin_bounds_d[:-1]
@@ -152,14 +162,18 @@ bin_centers_r = 1.e6 * np.sqrt(grid.bin_bounds_d[:-1]
 # grams, then dividing by bin_widths / 3 to convert to DSD over log(radius),
 # since the bin widths are in log(mass) and mass is proportional to radius^3.
 dsd_facs = 3000. / grid.bin_widths
-plt.semilogx(bin_centers_r, dsd_facs * gol_masses[idx_1800,:], 'k-',
+plt.semilogx(bin_centers_r, dsd_facs * gol_masses[0,:], 'k-',
              label="Analytic (30m)")
-plt.semilogx(bin_centers_r, dsd_facs * gol_masses[idx_3600,:], 'k--',
+plt.semilogx(bin_centers_r, dsd_facs * gol_masses[1,:], 'k--',
              label="Analytic (60m)")
 plt.semilogx(bin_centers_r, dsd_facs * masses[idx_1800,:], 'b-',
              label="First-order (30m)")
 plt.semilogx(bin_centers_r, dsd_facs * masses[idx_3600,:], 'b--',
              label="First-order (60m)")
+plt.semilogx(bin_centers_r, dsd_facs * bott_masses[idx_1800,:], '-',
+             color='orange', label="Bott (30m)")
+plt.semilogx(bin_centers_r, dsd_facs * bott_masses[idx_3600,:], '--',
+             color='orange', label="Bott (60m)")
 plt.legend()
 plt.xlabel("$\log(r)$ (radius in micron)")
 plt.ylabel("Mass-weighted DSD (g/kg)")
