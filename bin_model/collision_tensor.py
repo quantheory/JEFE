@@ -150,10 +150,7 @@ class CollisionTensor():
             # Removal terms.
             rate[:nb] -= np.sum(dfdt_term,axis=1)
             # Production terms.
-            for k in range(nb):
-                for l in range(nb):
-                    zidx = self.idxs[k,l] + i
-                    rate[zidx] += dfdt_term[k,l]
+            np.add.at(rate, self.idxs + i, dfdt_term)
         if out_flux:
             rate[out_len-1] = rate[out_len-1:].sum()
         return rate[:out_len]
