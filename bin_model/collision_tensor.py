@@ -20,7 +20,7 @@ import numpy as np
 from bin_model.basis import make_piecewise_polynomial_basis
 from bin_model.collision_kernel import CoalescenceKernel
 
-@nb.njit
+@nb.njit(nogil=True, cache=True)
 def add_at(rate, idxs, dfdt_term, nb):
     for k in range(nb):
         for l in range(nb):

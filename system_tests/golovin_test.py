@@ -68,6 +68,10 @@ desc = bm.ModelStateDescriptor(const, grid)
 raw = desc.construct_raw(dsd)
 initial_state = bm.ModelState(desc, raw)
 
+# Call time_derivative_raw once here to ensure that JIT compilation time is not
+# included in the timing loop below.
+initial_state.time_derivative_raw([ctens])
+
 # Model integration.
 integrator = bm.ForwardEulerIntegrator(const, DT)
 start_time = perf_counter()
