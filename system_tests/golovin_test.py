@@ -144,7 +144,7 @@ idx_3600 = int(np.round(3600 / DT))
 print("Mass RMS difference at 1800s: ", la.norm(masses[idx_1800,:]
                                                 - gol_masses[0,:]))
 print("Mass RMS difference at 3600s: ", la.norm(masses[idx_3600,:]
-                                                - gol_masses[0,:]))
+                                                - gol_masses[1,:]))
 
 with nc4.Dataset("bott_golovin_s2.nc") as data:
     bott_masses = data['mass'][:,:].T
@@ -152,7 +152,7 @@ with nc4.Dataset("bott_golovin_s2.nc") as data:
 print("Bott mass RMS difference at 1800s: ", la.norm(bott_masses[idx_1800,:]
                                                 - gol_masses[0,:]))
 print("Bott mass RMS difference at 3600s: ", la.norm(bott_masses[idx_3600,:]
-                                                - gol_masses[0,:]))
+                                                - gol_masses[1,:]))
 
 # Middle radius in each bin in microns, for plotting.
 bin_centers_r = 1.e6 * np.sqrt(grid.bin_bounds_d[:-1]
