@@ -367,6 +367,146 @@ class CollisionKernel(ABC):
     """Length of collision kernel type string written to file."""
 
     @abstractmethod
+    def integrate_over_bins(self, basis_x, basis_y, lz_bound):
+        """Integrate kernel over a relevant domain given x, y, and z bins.
+
+        Arguments:
+        basis_x - Basis function for x bin (source bin).
+        basis_y - Basis function for y bin (colliding bin).
+        lz_bound - Bounds for z bin (destination bin).
+
+        This returns the value of the mass-weighted kernel integrated over the
+        region where the values of `(lx, ly)` are in the given bins, and where
+        collisions produce masses in the z bin.
+        """
+
+    @classmethod
+    @abstractmethod
+    def construct_sparsity_structure(cls, basis, grid, boundary=None):
+        """Find the sparsity structure of a tensor discretizing this kernel.
+
+        Arguments:
+        boundary (optional) - Either 'open' or 'closed'. Default is 'open'.
+
+        We represent the collision kernel as a tensor indexed by three bins:
+
+         1. The bin acting as a source of mass (labeled the "x" bin).
+         2. A bin colliding with the source bin (the "y" bin).
+         3. The destination bin that mass is added to (the "z" bin).
+
+        For a given x and y bin, not every particle size can be produced; only
+        a small range of z bins will have nonzero collision tensor. To represent
+        these ranges, the function returns a tuple `(idxs, nums, max_num)`:
+
+         - idxs is an array of shape `(num_bins, num_bins)` that contains the
+           indices of the smallest z bins for which the tensor is non-zero for
+           each index of x and y bins.
+         - nums is also of shape `(num_bins, num_bins)`, and contains the
+           number of z bins that have nonzero tensor elements for each x and y.
+         - max_num is simply the value of the maximum entry in nums, and is
+           returned only for convenience.
+
+        The outputs treat particles that are larger than the largest bin as
+        belonging to an extra bin that stretches to infinity; therefore, the
+        maximum possible values of both idxs and idxs + nums - 1 are num_bins,
+        not num_bins - 1.
+
+        If `boundary == 'closed'`, this behavior is modified so that there is no
+        bin stretching to infinity, the excessive mass is assumed to remain in
+        the largest finite bin, and the maximum values of idxs and idxs + nums -
+        1 are actually num_bins - 1.
+
+        For most mass grids used for collision-coalescence, note that the
+        entries of nums are all 1 or 2, so max_num is 2.
+        """
+
+    @abstractmethod
+    def to_netcdf(self, netcdf_file):
+        """Write internal state to netCDF file."""
+
+    @classmethod
+    def from_netcdf(cls, netcdf_file, constants):
+        """Retrieve a CollisionKernel object from a NetcdfFile."""
+        ckern_type = netcdf_file.read_characters('collision_kernel_type')
+        if ckern_type == 'Long':
+            kc = netcdf_file.read_scalar('kc')
+            kr = netcdf_file.read_scalar('kr')
+            rain_m = netcdf_file.read_scalar('rain_m')
+            return LongKernel(constants, kc=kc, kr=kr, rain_m=rain_m)
+        if ckern_type == 'Hall':
+            efficiency_name = netcdf_file.read_characters('efficiency_name')
+            return HallKernel(constants, efficiency_name)
+        raise RuntimeError("unrecognized collision_kernel_type in file")
+
+
+class CoalescenceKernel(CollisionKernel):
+    """
+    Represent a collision kernel for the bin model.
+    """
+
+    @classmethod
+    def construct_sparsity_structure(cls, basis, grid, boundary=None):
+        """Find the sparsity structure of a tensor discretizing this kernel.
+
+        Arguments:
+        boundary (optional) - Either 'open' or 'closed'. Default is 'open'.
+
+        We represent the collision kernel as a tensor indexed by three bins:
+
+         1. The bin acting as a source of mass (labeled the "x" bin).
+         2. A bin colliding with the source bin (the "y" bin).
+         3. The destination bin that mass is added to (the "z" bin).
+
+        For a given x and y bin, not every particle size can be produced; only
+        a small range of z bins will have nonzero collision tensor. To represent
+        these ranges, the function returns a tuple `(idxs, nums, max_num)`:
+
+         - idxs is an array of shape `(num_bins, num_bins)` that contains the
+           indices of the smallest z bins for which the tensor is non-zero for
+           each index of x and y bins.
+         - nums is also of shape `(num_bins, num_bins)`, and contains the
+           number of z bins that have nonzero tensor elements for each x and y.
+         - max_num is simply the value of the maximum entry in nums, and is
+           returned only for convenience.
+
+        The outputs treat particles that are larger than the largest bin as
+        belonging to an extra bin that stretches to infinity; therefore, the
+        maximum possible values of both idxs and idxs + nums - 1 are num_bins,
+        not num_bins - 1.
+
+        If `boundary == 'closed'`, this behavior is modified so that there is no
+        bin stretching to infinity, the excessive mass is assumed to remain in
+        the largest finite bin, and the maximum values of idxs and idxs + nums -
+        1 are actually num_bins - 1.
+
+        For most mass grids used for collision-coalescence, note that the
+        entries of nums are all 1 or 2, so max_num is 2.
+        """
+        if boundary is None:
+            boundary = 'open'
+        if boundary not in ('open', 'closed'):
+            raise ValueError("invalid boundary specified: " + str(boundary))
+        nbasis = basis.size
+        idxs = np.zeros((nbasis, nbasis), dtype=np.int_)
+        nums = np.zeros((nbasis, nbasis), dtype=np.int_)
+        for i in range(nbasis):
+            for j in range(nbasis):
+                idxs[i,j], nums[i,j] = grid.find_sum_bins(
+                    basis[i].lower_bound, basis[i].upper_bound,
+                    basis[j].lower_bound, basis[j].upper_bound,
+                )
+        nb = grid.num_bins
+        if boundary == 'closed':
+            for i in range(nbasis):
+                for j in range(nbasis):
+                    if idxs[i,j] == nb:
+                        idxs[i,j] = nb - 1
+                    elif idxs[i,j] + nums[i,j] - 1 == nb:
+                        nums[i,j] -= 1
+        max_num = nums.max()
+        return idxs, nums, max_num
+
+    @abstractmethod
     def kernel_x(self, x, y):
         """Calculate kernel function as a function of log scaled mass."""
 
@@ -428,26 +568,8 @@ class CollisionKernel(ABC):
                                            y_bound_p[i,:], btype)
         return output
 
-    @abstractmethod
-    def to_netcdf(self, netcdf_file):
-        """Write internal state to netCDF file."""
 
-    @classmethod
-    def from_netcdf(cls, netcdf_file, constants):
-        """Retrieve a CollisionKernel object from a NetcdfFile."""
-        ckern_type = netcdf_file.read_characters('collision_kernel_type')
-        if ckern_type == 'Long':
-            kc = netcdf_file.read_scalar('kc')
-            kr = netcdf_file.read_scalar('kr')
-            rain_m = netcdf_file.read_scalar('rain_m')
-            return LongKernel(constants, kc=kc, kr=kr, rain_m=rain_m)
-        if ckern_type == 'Hall':
-            efficiency_name = netcdf_file.read_characters('efficiency_name')
-            return HallKernel(constants, efficiency_name)
-        raise RuntimeError("unrecognized collision_kernel_type in file")
-
-
-class LongKernel(CollisionKernel):
+class LongKernel(CoalescenceKernel):
     """
     Implement the Long (1974) collision-coalescence kernel.
 
@@ -679,7 +801,7 @@ def make_golovin_kernel(constants, b=6.e3):
     return LongKernel(constants, rain_m=1.e-30, kr_si=b)
 
 
-class HallKernel(CollisionKernel):
+class HallKernel(CoalescenceKernel):
     """
     Implement Hall-like collision-coalescence kernel.
 

@@ -21,10 +21,14 @@ import unittest
 from scipy.integrate import dblquad
 
 from bin_model.math_utils import add_logs, sub_logs, dilogarithm
-from bin_model.basis import PolynomialOnInterval
+from bin_model.basis import PolynomialOnInterval, \
+    make_piecewise_polynomial_basis
 from bin_model.constants import ModelConstants
 # pylint: disable-next=wildcard-import,unused-wildcard-import
 from bin_model.collision_kernel import *
+from bin_model.mass_grid import GeometricMassGrid
+
+from .array_assert import ArrayTestCase
 
 # Because this module requires specifying a large number of BoundType enums,
 # give them short names here.
@@ -445,6 +449,73 @@ class TestReferenceLong(unittest.TestCase):
                               y_bound_p[0], hfun, epsabs=1.e-13)
         actual = reference_long_rain(kr, lx_bound, y_bound_p)
         self.assertAlmostEqual(actual, expected, places=12)
+
+
+class TestCoalescenceKernel(ArrayTestCase):
+    """
+    Tests of CoalescenceKernel.
+    """
+    def setUp(self):
+        self.constants = ModelConstants(rho_water=1000.,
+                                        rho_air=1.2,
+                                        diameter_scale=1.e-4,
+                                        rain_d=1.e-4)
+        # Mass-doubling grid.
+        self.md_grid = GeometricMassGrid(self.constants,
+                                         d_min=1.e-6,
+                                         d_max=2.e-6,
+                                         num_bins=3)
+        self.basis = make_piecewise_polynomial_basis(self.md_grid, 1)
+
+    def test_construct_sparsity_pattern(self):
+        """Check construct_sparsity_pattern for a simple mass-doubling grid."""
+        grid = self.md_grid
+        idxs, nums, max_num = \
+            CoalescenceKernel.construct_sparsity_structure(self.basis,
+                                                           self.md_grid)
+        expected_idxs = np.array([
+            [1, 1, 2],
+            [1, 2, 2],
+            [2, 2, 3],
+        ])
+        expected_nums = np.array([
+            [1, 2, 2],
+            [2, 1, 2],
+            [2, 2, 1],
+        ])
+        expected_max_num = 2
+        self.assertArrayEqual(idxs, np.tile(expected_idxs, (2, 2)))
+        self.assertArrayEqual(nums, np.tile(expected_nums, (2, 2)))
+        self.assertEqual(max_num, expected_max_num)
+
+    def test_construct_sparsity_pattern_closed_boundary(self):
+        """Check construct_sparsity_pattern for a "closed" upper boundary."""
+        grid = self.md_grid
+        idxs, nums, max_num = \
+            CoalescenceKernel.construct_sparsity_structure(self.basis,
+                                                           self.md_grid,
+                                                           boundary='closed')
+        expected_idxs = np.array([
+            [1, 1, 2],
+            [1, 2, 2],
+            [2, 2, 2],
+        ])
+        expected_nums = np.array([
+            [1, 2, 1],
+            [2, 1, 1],
+            [1, 1, 1],
+        ])
+        expected_max_num = 2
+        self.assertArrayEqual(idxs, np.tile(expected_idxs, (2, 2)))
+        self.assertArrayEqual(nums, np.tile(expected_nums, (2, 2)))
+        self.assertEqual(max_num, expected_max_num)
+
+    def test_construct_sparsity_pattern_invalid_boundary_raises(self):
+        """Check construct_sparsity_pattern error for invalid boundary."""
+        with self.assertRaises(ValueError):
+            CoalescenceKernel.construct_sparsity_structure(self.basis,
+                                                           self.md_grid,
+                                                           boundary='nonsense')
 
 
 class TestLongKernelInit(unittest.TestCase):

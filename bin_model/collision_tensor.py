@@ -17,7 +17,8 @@
 import numba as nb
 import numpy as np
 
-from bin_model.basis import PolynomialOnInterval
+from bin_model.basis import make_piecewise_polynomial_basis
+from bin_model.collision_kernel import CoalescenceKernel
 
 @nb.njit
 def add_at(rate, idxs, dfdt_term, nb):
@@ -44,14 +45,18 @@ class CollisionTensor():
     boundary_str_len = 16
     """Length of string specifying boundary condition for largest bin."""
 
-    def __init__(self, grid, boundary=None, ckern=None, data=None):
+    def __init__(self, grid, basis=None, boundary=None, ckern=None, data=None):
         self.ckern = ckern
         self.grid = grid
         if boundary is None:
             boundary = 'open'
         self.boundary = boundary
+        if basis is None:
+            basis = make_piecewise_polynomial_basis(grid, 0)
+        self.basis = basis
         idxs, nums, max_num = \
-            grid.construct_sparsity_structure(boundary=boundary)
+            CoalescenceKernel.construct_sparsity_structure(basis, grid,
+                                                           boundary=boundary)
         self.idxs = idxs
         self.nums = nums
         self.max_num = max_num
@@ -71,19 +76,20 @@ class CollisionTensor():
 
     def _calc_kernel_integrals(self, ckern):
         """Integrate kernel to get contributions to entries in self.data."""
+        nbasis = self.basis.size
         nb = self.grid.num_bins
         bb = self.grid.bin_bounds
-        integrals = np.zeros((self.max_num, nb, nb))
+        integrals = np.zeros((self.max_num, nbasis, nbasis))
         # Largest bin for output is last in-range bin for closed boundary, but
         # is the out-of-range "bin" going to infinity for open boundary.
         if self.boundary == 'closed':
             high_bin = nb - 1
         else:
             high_bin = nb
-        for k in range(nb):
-            basis_x = PolynomialOnInterval(bb[k], bb[k+1], 0)
-            for l in range(nb):
-                basis_y = PolynomialOnInterval(bb[l], bb[l+1], 0)
+        for k in range(nbasis):
+            basis_x = self.basis[k]
+            for l in range(nbasis):
+                basis_y = self.basis[l]
                 idx = self.idxs[k,l]
                 for i in range(self.nums[k,l]):
                     zidx = idx + i

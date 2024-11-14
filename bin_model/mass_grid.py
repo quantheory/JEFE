@@ -93,66 +93,6 @@ class MassGrid:
         num = high_idx - idx + 1
         return idx, num
 
-    def construct_sparsity_structure(self, boundary=None):
-        """Find the sparsity structure of a collision tensor using this grid.
-
-        Arguments:
-        boundary (optional) - Either 'open' or 'closed'. Default is 'open'.
-
-        We represent the collision kernel as a tensor indexed by three bins:
-
-         1. The bin acting as a source of mass (labeled the "x" bin).
-         2. A bin colliding with the source bin (the "y" bin).
-         3. The destination bin that mass is added to (the "z" bin).
-
-        For a given x and y bin, not every particle size can be produced; only
-        a small range of z bins will have nonzero collision tensor. To represent
-        these ranges, the function returns a tuple `(idxs, nums, max_num)`:
-
-         - idxs is an array of shape `(num_bins, num_bins)` that contains the
-           indices of the smallest z bins for which the tensor is non-zero for
-           each index of x and y bins.
-         - nums is also of shape `(num_bins, num_bins)`, and contains the
-           number of z bins that have nonzero tensor elements for each x and y.
-         - max_num is simply the value of the maximum entry in nums, and is
-           returned only for convenience.
-
-        The outputs treat particles that are larger than the largest bin as
-        belonging to an extra bin that stretches to infinity; therefore, the
-        maximum possible values of both idxs and idxs + nums - 1 are num_bins,
-        not num_bins - 1.
-
-        If `boundary == 'closed'`, this behavior is modified so that there is
-        no bin stretching to infinity, the excessive mass is placed in the
-        largest finite bin, and the maximum values of idxs and idxs + nums - 1
-        are actually num_bins - 1.
-
-        For geometrically-spaced mass grids, note that the entries of nums are
-        all 1 or 2, so max_num is 2.
-        """
-        if boundary is None:
-            boundary = 'open'
-        if boundary not in ('open', 'closed'):
-            raise ValueError("invalid boundary specified: " + str(boundary))
-        nb = self.num_bins
-        bb = self.bin_bounds
-        idxs = np.zeros((nb, nb), dtype=np.int_)
-        nums = np.zeros((nb, nb), dtype=np.int_)
-        for i in range(nb):
-            for j in range(nb):
-                idxs[i,j], nums[i,j] = self.find_sum_bins(
-                    bb[i], bb[i+1], bb[j], bb[j+1]
-                )
-        if boundary == 'closed':
-            for i in range(nb):
-                for j in range(nb):
-                    if idxs[i,j] == nb:
-                        idxs[i,j] = nb - 1
-                    elif idxs[i,j] + nums[i,j] - 1 == nb:
-                        nums[i,j] -= 1
-        max_num = nums.max()
-        return idxs, nums, max_num
-
     def _calculate_rain_threshold_info(self, rain_m):
         """Return information about cloud-rain threshold in the grid.
 

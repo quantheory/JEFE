@@ -141,50 +141,6 @@ class TestMassGrid(ArrayTestCase):
         self.assertEqual(idx, 6)
         self.assertEqual(num, 1)
 
-    def test_construct_sparsity_pattern(self):
-        """Check construct_sparsity_pattern for a simple mass-doubling grid."""
-        grid = self.md_grid
-        idxs, nums, max_num = grid.construct_sparsity_structure()
-        expected_idxs = np.array([
-            [1, 1, 2],
-            [1, 2, 2],
-            [2, 2, 3],
-        ])
-        expected_nums = np.array([
-            [1, 2, 2],
-            [2, 1, 2],
-            [2, 2, 1],
-        ])
-        expected_max_num = 2
-        self.assertArrayEqual(idxs, expected_idxs)
-        self.assertArrayEqual(nums, expected_nums)
-        self.assertEqual(max_num, expected_max_num)
-
-    def test_construct_sparsity_pattern_closed_boundary(self):
-        """Check construct_sparsity_pattern for a "closed" upper boundary."""
-        grid = self.md_grid
-        idxs, nums, max_num = \
-            grid.construct_sparsity_structure(boundary='closed')
-        expected_idxs = np.array([
-            [1, 1, 2],
-            [1, 2, 2],
-            [2, 2, 2],
-        ])
-        expected_nums = np.array([
-            [1, 2, 1],
-            [2, 1, 1],
-            [1, 1, 1],
-        ])
-        expected_max_num = 2
-        self.assertArrayEqual(idxs, expected_idxs)
-        self.assertArrayEqual(nums, expected_nums)
-        self.assertEqual(max_num, expected_max_num)
-
-    def test_construct_sparsity_pattern_invalid_boundary_raises(self):
-        """Check construct_sparsity_pattern error for invalid boundary."""
-        with self.assertRaises(ValueError):
-            self.geo_grid.construct_sparsity_structure(boundary='nonsense')
-
 
 class TestMomentWeightVector(ArrayTestCase):
     """
